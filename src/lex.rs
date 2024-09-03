@@ -89,49 +89,31 @@ impl<'a, 'b> Lexer<'a, 'b> {
                 b'+' => return self.new_token(Plus),
                 b';' => return self.new_token(Semicolon),
                 b'*' => return self.new_token(Star),
-                b'!' => {
-                    return if self.matches(b'=') {
-                        self.new_token(BangEqual)
-                    } else {
-                        self.new_token(Bang)
-                    };
-                }
-                b'=' => {
-                    return if self.matches(b'=') {
-                        self.new_token(EqualEqual)
-                    } else {
-                        self.new_token(Equal)
-                    };
-                }
-                b'<' => {
-                    return if self.matches(b'=') {
-                        self.new_token(LessEqual)
-                    } else {
-                        self.new_token(Less)
-                    };
-                }
-                b'>' => {
-                    return if self.matches(b'=') {
-                        self.new_token(GreaterEqual)
-                    } else {
-                        self.new_token(Greater)
-                    };
-                }
-                b'/' => {
-                    if self.matches(b'/') {
-                        while !matches!(self.peek(), Some(b'\n') | None) {
-                            self.advance();
-                        }
-                    } else {
-                        return self.new_token(Slash);
-                    }
-                }
+                b'!' => match self.matches(b'=') {
+                    true => return self.new_token(BangEqual),
+                    false => return self.new_token(Bang),
+                },
+                b'=' => match self.matches(b'=') {
+                    true => return self.new_token(EqualEqual),
+                    false => return self.new_token(Equal),
+                },
+                b'<' => match self.matches(b'=') {
+                    true => return self.new_token(LessEqual),
+                    false => return self.new_token(Less),
+                },
+                b'>' => match self.matches(b'=') {
+                    true => return self.new_token(GreaterEqual),
+                    false => return self.new_token(Greater),
+                },
+                b'/' => match self.slash() {
+                    Some(t) => return t,
+                    _ => (),
+                },
                 b' ' | b'\r' | b'\t' | b'\n' => {}
-                b'"' => {
-                    if let Some(t) = self.string() {
-                        return t;
-                    }
-                }
+                b'"' => match self.string() {
+                    Some(t) => return t,
+                    _ => (),
+                },
                 c if is_digit(c) => return self.number(),
                 c if is_alpha(c) => return self.identifier(),
                 _ => self
@@ -189,6 +171,26 @@ impl<'a, 'b> Lexer<'a, 'b> {
         self.advance(); // closing ".
         let lexeme = self.read_lexeme();
         Some(self.new_token(TokenType::String(lexeme[1..lexeme.len() - 1].to_string())))
+    }
+
+    fn slash(&mut self) -> Option<Token> {
+        match self.peek() {
+            Some(b'/') => {
+                self.advance();
+                while self.peek()? != b'\n' {
+                    self.advance();
+                }
+            }
+            Some(b'*') => {
+                self.advance();
+                while (self.peek()?, self.peek_next()?) != (b'*', b'/') {
+                    self.advance();
+                }
+                self.current += 2;
+            }
+            _ => return Some(self.new_token(TokenType::Slash)),
+        }
+        None
     }
 
     fn read_lexeme(&self) -> &str {
@@ -254,4 +256,67 @@ const fn is_alpha(c: u8) -> bool {
 
 const fn is_alphanumeric(c: u8) -> bool {
     is_alpha(c) || is_digit(c)
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::SourceId;
+
+    use super::TokenType::*;
+    use super::*;
+
+    fn all_tokens(source: &str) -> Vec<Token> {
+        let mut ctx = Context::new(SourceId::Prompt, source);
+        let mut lexer = Lexer::new(&mut ctx);
+        let mut tokens = Vec::new();
+        let mut is_eof = false;
+        while !is_eof {
+            let t = lexer.next_token();
+            is_eof = t.is_eof();
+            tokens.push(t);
+        }
+        tokens
+    }
+
+    fn first_token(source: &str) -> Token {
+        all_tokens(source)
+            .into_iter()
+            .next()
+            .expect("source has no tokens")
+    }
+
+    #[test]
+    fn test_slash() {
+        assert_eq!(all_tokens("1 / 2")[1], token(Slash, Offset(2), Length(1)));
+        assert!(all_tokens("1 + () //")
+            .into_iter()
+            .all(|t| t.token_type != Slash));
+        assert_eq!(first_token("/"), token(Slash, Offset(0), Length(1)));
+        assert_eq!(first_token("//"), eof(Offset(2)));
+        assert_eq!(first_token("// \n"), eof(Offset(4)));
+        assert_eq!(first_token("/**/"), eof(Offset(4)));
+        assert_eq!(
+            all_tokens("/*/*/*/"),
+            vec![
+                token(Star, Offset(5), Length(1)),
+                token(Slash, Offset(6), Length(1)),
+                eof(Offset(7)),
+            ]
+        );
+    }
+
+    fn token(token_type: TokenType, offset: Offset, length: Length) -> Token {
+        Token {
+            token_type,
+            offset: offset.0,
+            length: length.0,
+        }
+    }
+
+    fn eof(offset: Offset) -> Token {
+        token(Eof, offset, Length(0))
+    }
+
+    struct Offset(usize);
+    struct Length(usize);
 }
