@@ -17,10 +17,8 @@ impl Visitor for AstPrinter {
                 TokenType::Nil => "nil".to_string(),
                 _ => panic!("invalid literal: {t:?}"),
             },
-            Expr::Unary { op, expr } => self.parenthesize(&format!("{:?}", op.token_type), &[expr]),
-            Expr::Binary { left, op, right } => {
-                self.parenthesize(&format!("{:?}", op.token_type), &[left, right])
-            }
+            Expr::Unary { op, expr } => self.parenthesize(&op.lexeme, &[expr]),
+            Expr::Binary { left, op, right } => self.parenthesize(&op.lexeme, &[left, right]),
             Expr::Grouping(t) => self.parenthesize("group", &[t]),
         }
     }
@@ -52,9 +50,17 @@ mod tests {
     use super::*;
 
     fn token(token_type: TokenType) -> Token {
+        let lexeme = match token_type {
+            Star => "*",
+            Plus => "+",
+            Minus => "-",
+            Slash => "/",
+            _ => "",
+        }
+        .to_string();
         Token {
             token_type,
-            lexeme: "".to_string(),
+            lexeme,
             offset: 0,
             length: 0,
         }
@@ -85,7 +91,7 @@ mod tests {
             op: token(Star),
             right: Box::new(Expr::Grouping(Box::new(literal(Number(45.67))))),
         };
-        assert_eq!(&printer.print(&expr), "(Star (Minus 123) (group 45.67))");
+        assert_eq!(&printer.print(&expr), "(* (- 123) (group 45.67))");
     }
 
     #[test]
@@ -96,6 +102,6 @@ mod tests {
             op: token(Plus),
             right: Box::new(literal(Number(2.0))),
         };
-        assert_eq!(&printer.print(&expr), "(Plus 1 2)");
+        assert_eq!(&printer.print(&expr), "(+ 1 2)");
     }
 }
