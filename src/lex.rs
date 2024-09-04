@@ -1,8 +1,8 @@
 use crate::Context;
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct Lexer<'a, 'b> {
-    ctx: &'a mut Context<'b>,
+pub struct Lexer<'a> {
+    ctx: &'a mut Context,
 
     // offset in which lexeme starts
     start: usize,
@@ -13,9 +13,10 @@ pub struct Lexer<'a, 'b> {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Token {
-    token_type: TokenType,
-    offset: usize,
-    length: usize,
+    pub token_type: TokenType,
+    pub lexeme: String,
+    pub offset: usize,
+    pub length: usize,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -65,8 +66,8 @@ pub enum TokenType {
     Eof,
 }
 
-impl<'a, 'b> Lexer<'a, 'b> {
-    pub fn new(ctx: &'a mut Context<'b>) -> Self {
+impl<'a> Lexer<'a> {
+    pub fn new(ctx: &'a mut Context) -> Self {
         Self {
             ctx,
             start: 0,
@@ -124,6 +125,7 @@ impl<'a, 'b> Lexer<'a, 'b> {
         }
         Token {
             token_type: Eof,
+            lexeme: "".to_string(),
             offset: self.current - 1,
             length: 0,
         }
@@ -154,6 +156,7 @@ impl<'a, 'b> Lexer<'a, 'b> {
     fn new_token(&self, token_type: TokenType) -> Token {
         Token {
             token_type,
+            lexeme: self.ctx.source[self.start..self.current].to_string(),
             offset: self.start,
             length: self.current - self.start,
         }
@@ -266,6 +269,7 @@ mod tests {
     use super::*;
 
     fn all_tokens(source: &str) -> Vec<Token> {
+        let source = source.to_string();
         let mut ctx = Context::new(SourceId::Prompt, source);
         let mut lexer = Lexer::new(&mut ctx);
         let mut tokens = Vec::new();
@@ -287,34 +291,38 @@ mod tests {
 
     #[test]
     fn test_slash() {
-        assert_eq!(all_tokens("1 / 2")[1], token(Slash, Offset(2), Length(1)));
+        assert_eq!(
+            all_tokens("1 / 2")[1],
+            token(Slash, "/", Offset(2), Length(1))
+        );
         assert!(all_tokens("1 + () //")
             .into_iter()
             .all(|t| t.token_type != Slash));
-        assert_eq!(first_token("/"), token(Slash, Offset(0), Length(1)));
+        assert_eq!(first_token("/"), token(Slash, "/", Offset(0), Length(1)));
         assert_eq!(first_token("//"), eof(Offset(2)));
         assert_eq!(first_token("// \n"), eof(Offset(4)));
         assert_eq!(first_token("/**/"), eof(Offset(4)));
         assert_eq!(
             all_tokens("/*/*/*/"),
             vec![
-                token(Star, Offset(5), Length(1)),
-                token(Slash, Offset(6), Length(1)),
+                token(Star, "*", Offset(5), Length(1)),
+                token(Slash, "/", Offset(6), Length(1)),
                 eof(Offset(7)),
             ]
         );
     }
 
-    fn token(token_type: TokenType, offset: Offset, length: Length) -> Token {
+    fn token(token_type: TokenType, lexeme: &str, offset: Offset, length: Length) -> Token {
         Token {
             token_type,
+            lexeme: lexeme.to_string(),
             offset: offset.0,
             length: length.0,
         }
     }
 
     fn eof(offset: Offset) -> Token {
-        token(Eof, offset, Length(0))
+        token(Eof, "", offset, Length(0))
     }
 
     struct Offset(usize);

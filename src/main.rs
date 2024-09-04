@@ -1,4 +1,6 @@
+mod ast_printer;
 mod lex;
+mod parser;
 
 use std::env;
 use std::io;
@@ -7,6 +9,7 @@ use std::process;
 
 use ariadne::Color;
 use ariadne::{Label, Report, ReportKind, Source};
+use ast_printer::AstPrinter;
 
 fn main() {
     let args = env::args().collect::<Vec<_>>();
@@ -26,7 +29,7 @@ fn main() {
 fn run_file(path: String) -> Result<(), Error> {
     let content = std::fs::read_to_string(&path)
         .map_err(|e| Error::io_error(format!("failed to read script {path:?}: {e}")))?;
-    let mut ctx = Context::new(SourceId::File(path), &content);
+    let mut ctx = Context::new(SourceId::File(path), content);
     run(&mut ctx);
     match ctx.has_error {
         true => Err(Error::value_error("".into())),
@@ -35,16 +38,15 @@ fn run_file(path: String) -> Result<(), Error> {
 }
 
 fn run_prompt() -> Result<(), Error> {
-    let mut buf = String::new();
     loop {
-        buf.clear();
         print!("> ");
         io::stdout().flush()?;
+        let mut buf = String::new();
         let num_read = io::stdin().read_line(&mut buf)?;
         if num_read == 0 {
             break;
         }
-        let mut ctx = Context::new(SourceId::Prompt, &buf);
+        let mut ctx = Context::new(SourceId::Prompt, buf);
         run(&mut ctx);
     }
     println!();
@@ -53,19 +55,30 @@ fn run_prompt() -> Result<(), Error> {
 
 fn run(ctx: &mut Context) {
     let mut scanner = lex::Lexer::new(ctx);
+    let mut tokens = Vec::new();
     loop {
         let token = scanner.next_token();
-        println!("{token:?}");
-        if token.is_eof() {
+        tokens.push(token);
+        if tokens.last().unwrap().is_eof() {
             break;
         }
+    }
+    let tree = {
+        let mut parser = parser::Parser::new(ctx, tokens);
+        parser.parse()
+    };
+    if ctx.has_error {
+        return;
+    }
+    if let Some(t) = tree {
+        println!("{}", AstPrinter.print(&t))
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct Context<'a> {
+struct Context {
     src_id: SourceId,
-    source: &'a str,
+    source: String,
     has_error: bool,
 }
 
@@ -81,8 +94,8 @@ struct Error {
     message: String,
 }
 
-impl<'a> Context<'a> {
-    fn new(src_id: SourceId, source: &'a str) -> Self {
+impl Context {
+    fn new(src_id: SourceId, source: String) -> Self {
         let has_error = false;
         Self {
             src_id,
@@ -93,7 +106,7 @@ impl<'a> Context<'a> {
 
     fn report_error(&mut self, start: usize, end: usize, message: &str) {
         self.has_error = true;
-        let source = self.source;
+        let source = &self.source;
         let src_id = self.src_id.as_ref();
         Report::build(ReportKind::Error, src_id, start)
             .with_label(
