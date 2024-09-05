@@ -1,4 +1,5 @@
 mod ast_printer;
+mod interpreter;
 mod lex;
 mod parser;
 
@@ -9,7 +10,7 @@ use std::process;
 
 use ariadne::Color;
 use ariadne::{Label, Report, ReportKind, Source};
-use ast_printer::AstPrinter;
+use interpreter::Interpreter;
 
 fn main() {
     let args = env::args().collect::<Vec<_>>();
@@ -71,7 +72,7 @@ fn run(ctx: &mut Context) {
         return;
     }
     if let Some(t) = tree {
-        println!("{}", AstPrinter.print(&t))
+        println!("{:?}", Interpreter.evaluate(&t));
     }
 }
 

@@ -152,7 +152,7 @@ impl<'a> Parser<'a> {
     }
 
     fn advance(&mut self) -> &Token {
-        if !self.is_eof() {
+        if !self.is_eof() && self.current < self.tokens.len() {
             self.current += 1;
         }
         self.previous()
