@@ -72,7 +72,10 @@ fn run(ctx: &mut Context) {
         return;
     }
     if let Some(t) = tree {
-        println!("{:?}", Interpreter.evaluate(&t));
+        match Interpreter.evaluate(&t) {
+            Ok(literal) => println!("{}", literal.to_string()),
+            Err(e) => ctx.report_error(e.token.offset, e.token.offset + e.token.length, e.message),
+        }
     }
 }
 

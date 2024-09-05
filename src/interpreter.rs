@@ -12,12 +12,20 @@ pub enum Literal {
     String(String),
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct RuntimeError {
+    pub token: Token,
+    pub message: &'static str,
+}
+
+pub type RuntimeResult<T> = core::result::Result<T, RuntimeError>;
+
 impl Visitor for Interpreter {
-    type Return = Literal;
+    type Return = RuntimeResult<Literal>;
 
     fn visit(&self, expr: &Expr) -> Self::Return {
         match expr {
-            Expr::Literal(t) => t.token_type.clone().try_into().expect("invalid literal"),
+            Expr::Literal(t) => Ok(t.clone().into()),
             Expr::Unary { op, expr } => self.eval_unary(op, expr),
             Expr::Binary { left, op, right } => self.eval_binary(left, op, right),
             Expr::Grouping(expr) => self.evaluate(expr),
@@ -26,44 +34,45 @@ impl Visitor for Interpreter {
 }
 
 impl Interpreter {
-    pub fn evaluate(&self, expr: &Expr) -> Literal {
+    pub fn evaluate(&self, expr: &Expr) -> RuntimeResult<Literal> {
         expr.accept(self)
     }
 
-    fn eval_unary(&self, op: &Token, expr: &Expr) -> Literal {
-        let right = self.evaluate(expr);
+    fn eval_unary(&self, op: &Token, expr: &Expr) -> RuntimeResult<Literal> {
+        let right = self.evaluate(expr)?;
         match &op.token_type {
-            TokenType::Minus => {
-                if let Literal::Number(n) = right {
-                    Literal::Number(-n)
-                } else {
-                    todo!();
-                }
-            }
-            TokenType::Bang => Literal::Boolean(!self.is_truthy(right)),
-            _ => todo!(),
+            TokenType::Minus => match right {
+                Literal::Number(n) => Ok(Literal::Number(-n)),
+                _ => Err(RuntimeError::from_ref(op, "Operand must be a number.")),
+            },
+            TokenType::Bang => Ok(Literal::Boolean(!self.is_truthy(right))),
+            _ => unreachable!("unary expr parsing error"),
         }
     }
 
-    fn eval_binary(&self, left: &Expr, op: &Token, right: &Expr) -> Literal {
-        let left = self.evaluate(left);
-        let right = self.evaluate(right);
+    fn eval_binary(&self, left: &Expr, op: &Token, right: &Expr) -> RuntimeResult<Literal> {
+        let left = self.evaluate(left)?;
+        let right = self.evaluate(right)?;
+        let num_operands = || RuntimeError::from_ref(op, "Operands must be numbers.");
         match &op.token_type {
-            TokenType::Minus => numeric_op(|a, b| a - b, left, right).unwrap(),
-            TokenType::Slash => numeric_op(|a, b| a / b, left, right).unwrap(),
-            TokenType::Star => numeric_op(|a, b| a * b, left, right).unwrap(),
+            TokenType::Minus => num_op(|a, b| a - b, left, right).ok_or_else(num_operands),
+            TokenType::Slash => num_op(|a, b| a / b, left, right).ok_or_else(num_operands),
+            TokenType::Star => num_op(|a, b| a * b, left, right).ok_or_else(num_operands),
             TokenType::Plus => match (left, right) {
-                (Literal::Number(n1), Literal::Number(n2)) => Literal::Number(n1 + n2),
-                (Literal::String(s1), Literal::String(s2)) => Literal::String(s1 + &s2),
-                _ => todo!(),
+                (Literal::Number(n1), Literal::Number(n2)) => Ok(Literal::Number(n1 + n2)),
+                (Literal::String(s1), Literal::String(s2)) => Ok(Literal::String(s1 + &s2)),
+                _ => Err(RuntimeError::from_ref(
+                    op,
+                    "Operands must both be numbers or strings.",
+                )),
             },
-            TokenType::Greater => numeric_cmp(|a, b| a > b, left, right).unwrap(),
-            TokenType::GreaterEqual => numeric_cmp(|a, b| a >= b, left, right).unwrap(),
-            TokenType::Less => numeric_cmp(|a, b| a < b, left, right).unwrap(),
-            TokenType::LessEqual => numeric_cmp(|a, b| a <= b, left, right).unwrap(),
-            TokenType::EqualEqual => Literal::Boolean(left == right),
-            TokenType::BangEqual => Literal::Boolean(left != right),
-            _ => todo!(),
+            TokenType::Greater => num_cmp(|a, b| a > b, left, right).ok_or_else(num_operands),
+            TokenType::GreaterEqual => num_cmp(|a, b| a >= b, left, right).ok_or_else(num_operands),
+            TokenType::Less => num_cmp(|a, b| a < b, left, right).ok_or_else(num_operands),
+            TokenType::LessEqual => num_cmp(|a, b| a <= b, left, right).ok_or_else(num_operands),
+            TokenType::EqualEqual => Ok(Literal::Boolean(left == right)),
+            TokenType::BangEqual => Ok(Literal::Boolean(left != right)),
+            _ => unreachable!("binary expr parsing error"),
         }
     }
 
@@ -76,7 +85,7 @@ impl Interpreter {
     }
 }
 
-fn numeric_op<F>(op: F, left: Literal, right: Literal) -> Option<Literal>
+fn num_op<F>(op: F, left: Literal, right: Literal) -> Option<Literal>
 where
     F: FnOnce(f64, f64) -> f64,
 {
@@ -87,7 +96,7 @@ where
     }
 }
 
-fn numeric_cmp<F>(op: F, left: Literal, right: Literal) -> Option<Literal>
+fn num_cmp<F>(op: F, left: Literal, right: Literal) -> Option<Literal>
 where
     F: FnOnce(f64, f64) -> bool,
 {
@@ -98,18 +107,37 @@ where
     }
 }
 
-impl TryFrom<TokenType> for Literal {
-    type Error = ();
+impl RuntimeError {
+    fn new(token: Token, message: &'static str) -> Self {
+        Self { token, message }
+    }
 
-    fn try_from(token_type: TokenType) -> Result<Self, Self::Error> {
+    fn from_ref(token: &Token, message: &'static str) -> Self {
+        Self::new(token.clone(), message)
+    }
+}
+
+impl From<Token> for Literal {
+    fn from(token: Token) -> Self {
         use TokenType::*;
-        match token_type {
-            Nil => Ok(Self::Nil),
-            False => Ok(Self::Boolean(false)),
-            True => Ok(Self::Boolean(true)),
-            Number(n) => Ok(Self::Number(n)),
-            String(s) => Ok(Self::String(s)),
-            _ => Err(()),
+        match token.token_type {
+            Nil => Self::Nil,
+            False => Self::Boolean(false),
+            True => Self::Boolean(true),
+            Number(n) => Self::Number(n),
+            String(s) => Self::String(s),
+            _ => unreachable!("literal parsing error"),
+        }
+    }
+}
+
+impl ToString for Literal {
+    fn to_string(&self) -> String {
+        match self {
+            Literal::Nil => "nil".to_string(),
+            Literal::Boolean(b) => b.to_string(),
+            Literal::Number(n) => n.to_string(),
+            Literal::String(s) => format!("\"{s}\""),
         }
     }
 }

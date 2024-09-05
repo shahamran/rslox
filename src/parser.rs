@@ -171,7 +171,8 @@ impl<'a> Parser<'a> {
     }
 
     fn previous(&self) -> &Token {
-        &self.tokens[self.current - 1]
+        // TODO: not sure this is right.
+        &self.tokens[self.current.saturating_sub(1)]
     }
 
     fn consume(&mut self, token_type: &TokenType, message: &str) -> Result<&Token, ()> {
