@@ -22,4 +22,12 @@ impl Environment {
             None => Err(Error::runtime_err(name, "Undefined variable.")),
         }
     }
+
+    pub fn assign(&mut self, name: &Token, value: &Literal) -> Result<()> {
+        match self.values.get_mut(&name.lexeme) {
+            Some(v) => *v = value.clone(),
+            None => return Err(Error::runtime_err(name, "Undefined variable.")),
+        }
+        Ok(())
+    }
 }

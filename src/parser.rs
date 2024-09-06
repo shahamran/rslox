@@ -23,6 +23,10 @@ pub enum Expr {
     },
     Grouping(Box<Expr>),
     Variable(Token),
+    Assign {
+        name: Token,
+        value: Box<Expr>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -122,7 +126,24 @@ impl<'a> Parser<'a> {
     }
 
     fn expression(&mut self) -> Result<Expr> {
-        self.equality()
+        self.assignment()
+    }
+
+    fn assignment(&mut self) -> Result<Expr> {
+        let expr = self.equality()?;
+        if self.matches(&[TokenType::Equal]) {
+            let equals = self.previous().clone();
+            let value = self.assignment()?;
+            if let Expr::Variable(t) = expr {
+                let name = t;
+                let value = Box::new(value);
+                return Ok(Expr::Assign { name, value });
+            } else {
+                self.ctx
+                    .report(Error::runtime_err(&equals, "Invalid assignment target."));
+            }
+        }
+        Ok(expr)
     }
 
     fn equality(&mut self) -> Result<Expr> {

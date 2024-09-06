@@ -61,9 +61,7 @@ impl Context {
     pub fn report(&mut self, err: Error) {
         let err = self.error.insert(err);
         let (start, end) = match &err.token {
-            Some(t) => {
-                (t.offset, t.offset + t.length)
-            }
+            Some(t) => (t.offset, t.offset + t.length),
             None => return eprintln!("{:?}: {}", err.kind, &err.message),
         };
         let source = &self.source;

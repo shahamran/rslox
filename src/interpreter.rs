@@ -28,6 +28,7 @@ impl Visitor<Expr> for Interpreter {
             Expr::Binary { left, op, right } => self.eval_binary(left, op, right),
             Expr::Grouping(expr) => self.evaluate(expr),
             Expr::Variable(name) => self.environment.borrow().get(name).cloned(),
+            Expr::Assign { name, value } => self.eval_assignment(name, value),
         }
     }
 }
@@ -85,6 +86,12 @@ impl Interpreter {
             Literal::Nil => false,
             _ => true,
         }
+    }
+
+    fn eval_assignment(&self, name: &Token, value: &Expr) -> Result<Literal> {
+        let value = self.evaluate(value)?;
+        self.environment.borrow_mut().assign(name, &value)?;
+        Ok(value)
     }
 }
 

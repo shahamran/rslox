@@ -10,8 +10,8 @@ use std::io;
 use std::io::Write;
 use std::process;
 
-use interpreter::Interpreter;
 use error::{Error, Result};
+use interpreter::Interpreter;
 
 fn main() {
     let args = env::args().collect::<Vec<_>>();
