@@ -37,6 +37,7 @@ pub enum Stmt {
     },
     Expression(Expr),
     Print(Expr),
+    Block(Vec<Stmt>),
 }
 
 impl Expr {
@@ -108,9 +109,20 @@ impl<'a> Parser<'a> {
     fn statement(&mut self) -> Result<Stmt> {
         if self.matches(&[TokenType::Print]) {
             self.print_statement()
+        } else if self.matches(&[TokenType::LeftBrace]) {
+            Ok(Stmt::Block(self.block()?))
         } else {
             self.expression_statement()
         }
+    }
+
+    fn block(&mut self) -> Result<Vec<Stmt>> {
+        let mut statements = Vec::new();
+        while !self.check(&TokenType::RightBrace) && !self.is_eof() {
+            statements.push(self.declaration()?);
+        }
+        self.consume(&TokenType::RightBrace, "Expected '}' after block.")?;
+        Ok(statements)
     }
 
     fn print_statement(&mut self) -> Result<Stmt> {

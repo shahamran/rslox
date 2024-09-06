@@ -1,33 +1,53 @@
 use std::collections::HashMap;
-use std::rc::Rc;
 
 use crate::error::{Error, Result};
 use crate::interpreter::Literal;
 use crate::lex::Token;
 
-#[derive(Debug, Default, Clone, PartialEq)]
-pub struct Environment {
-    parent: Option<Rc<Environment>>,
-    values: HashMap<String, Literal>,
-}
+#[derive(Debug, Clone, PartialEq)]
+pub struct Environment(Vec<HashMap<String, Literal>>);
 
 impl Environment {
+    pub fn new_block(&mut self) {
+        self.0.push(Default::default());
+    }
+
+    pub fn remove_block(&mut self) {
+        assert!(self.0.len() > 1, "cannot remove global scope");
+        self.0.pop();
+    }
+
     pub fn define(&mut self, name: String, value: Literal) {
-        self.values.insert(name, value);
+        self.0.last_mut().unwrap().insert(name, value);
     }
 
     pub fn get(&self, name: &Token) -> Result<&Literal> {
-        match self.values.get(&name.lexeme) {
-            Some(v) => Ok(v),
-            None => Err(Error::runtime_err(name, "Undefined variable.")),
+        for values in self.0.iter().rev() {
+            if let Some(v) = values.get(&name.lexeme) {
+                return Ok(v);
+            }
         }
+        Err(Error::runtime_err(name, "Undefined variable."))
     }
 
     pub fn assign(&mut self, name: &Token, value: &Literal) -> Result<()> {
-        match self.values.get_mut(&name.lexeme) {
-            Some(v) => *v = value.clone(),
-            None => return Err(Error::runtime_err(name, "Undefined variable.")),
-        }
+        let v = self.get_mut(name)?;
+        *v = value.clone();
         Ok(())
+    }
+
+    fn get_mut(&mut self, name: &Token) -> Result<&mut Literal> {
+        for values in self.0.iter_mut().rev() {
+            if let Some(v) = values.get_mut(&name.lexeme) {
+                return Ok(v);
+            }
+        }
+        Err(Error::runtime_err(name, "Undefined variable."))
+    }
+}
+
+impl Default for Environment {
+    fn default() -> Self {
+        Self(vec![Default::default()])
     }
 }

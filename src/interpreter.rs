@@ -42,6 +42,18 @@ impl Interpreter {
         expr.accept(self)
     }
 
+    fn execute_block(&self, statements: &[Stmt]) -> Result<()> {
+        self.environment.borrow_mut().new_block();
+        for stmt in statements {
+            if let Err(e) = self.execute(stmt) {
+                self.environment.borrow_mut().remove_block();
+                return Err(e);
+            }
+        }
+        self.environment.borrow_mut().remove_block();
+        Ok(())
+    }
+
     fn eval_unary(&self, op: &Token, expr: &Expr) -> Result<Literal> {
         let right = self.evaluate(expr)?;
         match &op.token_type {
@@ -107,15 +119,15 @@ impl Visitor<Stmt> for Interpreter {
                 };
                 let name = name.lexeme.clone();
                 self.environment.borrow_mut().define(name, value);
-                Ok(())
             }
-            Stmt::Expression(expr) => self.evaluate(expr).map(|_| ()),
+            Stmt::Expression(expr) => self.evaluate(expr).map(|_| ())?,
             Stmt::Print(expr) => {
                 let literal = self.evaluate(expr)?;
                 println!("{}", literal.to_string());
-                Ok(())
             }
+            Stmt::Block(statements) => self.execute_block(statements)?,
         }
+        Ok(())
     }
 }
 
