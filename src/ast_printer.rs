@@ -3,7 +3,7 @@ use crate::parser::{Expr, Visitor};
 
 pub struct AstPrinter;
 
-impl Visitor for AstPrinter {
+impl Visitor<Expr> for AstPrinter {
     type Return = String;
 
     fn visit(&self, expr: &Expr) -> Self::Return {

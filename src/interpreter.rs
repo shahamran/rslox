@@ -1,5 +1,6 @@
+use crate::error::{Error, Result};
 use crate::lex::{Token, TokenType};
-use crate::parser::{Expr, Visitor};
+use crate::parser::{Expr, Stmt, Visitor};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Interpreter;
@@ -12,16 +13,8 @@ pub enum Literal {
     String(String),
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct RuntimeError {
-    pub token: Token,
-    pub message: &'static str,
-}
-
-pub type RuntimeResult<T> = core::result::Result<T, RuntimeError>;
-
-impl Visitor for Interpreter {
-    type Return = RuntimeResult<Literal>;
+impl Visitor<Expr> for Interpreter {
+    type Return = Result<Literal>;
 
     fn visit(&self, expr: &Expr) -> Self::Return {
         match expr {
@@ -29,31 +22,36 @@ impl Visitor for Interpreter {
             Expr::Unary { op, expr } => self.eval_unary(op, expr),
             Expr::Binary { left, op, right } => self.eval_binary(left, op, right),
             Expr::Grouping(expr) => self.evaluate(expr),
+            Expr::Variable(_) => todo!(),
         }
     }
 }
 
 impl Interpreter {
-    pub fn evaluate(&self, expr: &Expr) -> RuntimeResult<Literal> {
+    pub fn execute(&self, stmt: &Stmt) -> Result<()> {
+        Ok(stmt.accept(self))
+    }
+
+    pub fn evaluate(&self, expr: &Expr) -> Result<Literal> {
         expr.accept(self)
     }
 
-    fn eval_unary(&self, op: &Token, expr: &Expr) -> RuntimeResult<Literal> {
+    fn eval_unary(&self, op: &Token, expr: &Expr) -> Result<Literal> {
         let right = self.evaluate(expr)?;
         match &op.token_type {
             TokenType::Minus => match right {
                 Literal::Number(n) => Ok(Literal::Number(-n)),
-                _ => Err(RuntimeError::from_ref(op, "Operand must be a number.")),
+                _ => Err(Error::runtime_err(op, "Operand must be a number.")),
             },
             TokenType::Bang => Ok(Literal::Boolean(!self.is_truthy(right))),
             _ => unreachable!("unary expr parsing error"),
         }
     }
 
-    fn eval_binary(&self, left: &Expr, op: &Token, right: &Expr) -> RuntimeResult<Literal> {
+    fn eval_binary(&self, left: &Expr, op: &Token, right: &Expr) -> Result<Literal> {
         let left = self.evaluate(left)?;
         let right = self.evaluate(right)?;
-        let num_operands = || RuntimeError::from_ref(op, "Operands must be numbers.");
+        let num_operands = || Error::runtime_err(op, "Operands must be numbers.");
         match &op.token_type {
             TokenType::Minus => num_op(|a, b| a - b, left, right).ok_or_else(num_operands),
             TokenType::Slash => num_op(|a, b| a / b, left, right).ok_or_else(num_operands),
@@ -61,7 +59,7 @@ impl Interpreter {
             TokenType::Plus => match (left, right) {
                 (Literal::Number(n1), Literal::Number(n2)) => Ok(Literal::Number(n1 + n2)),
                 (Literal::String(s1), Literal::String(s2)) => Ok(Literal::String(s1 + &s2)),
-                _ => Err(RuntimeError::from_ref(
+                _ => Err(Error::runtime_err(
                     op,
                     "Operands must both be numbers or strings.",
                 )),
@@ -82,6 +80,26 @@ impl Interpreter {
             Literal::Nil => false,
             _ => true,
         }
+    }
+}
+
+impl Visitor<Stmt> for Interpreter {
+    type Return = ();
+
+    fn visit(&self, stmt: &Stmt) -> Self::Return {
+        match stmt {
+            Stmt::Var {
+                name: ident,
+                initializer: expr,
+            } => todo!(),
+            Stmt::Expression(expr) => {
+                self.evaluate(expr).unwrap();
+            }
+            Stmt::Print(expr) => {
+                let literal = self.evaluate(expr).unwrap();
+                println!("{}", literal.to_string());
+            }
+        };
     }
 }
 
@@ -107,16 +125,6 @@ where
     }
 }
 
-impl RuntimeError {
-    fn new(token: Token, message: &'static str) -> Self {
-        Self { token, message }
-    }
-
-    fn from_ref(token: &Token, message: &'static str) -> Self {
-        Self::new(token.clone(), message)
-    }
-}
-
 impl From<Token> for Literal {
     fn from(token: Token) -> Self {
         use TokenType::*;
@@ -137,7 +145,7 @@ impl ToString for Literal {
             Literal::Nil => "nil".to_string(),
             Literal::Boolean(b) => b.to_string(),
             Literal::Number(n) => n.to_string(),
-            Literal::String(s) => format!("\"{s}\""),
+            Literal::String(s) => s.clone(),
         }
     }
 }

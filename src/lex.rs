@@ -1,6 +1,6 @@
-use crate::Context;
+use crate::{error::Error, Context};
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq)]
 pub struct Lexer<'a> {
     ctx: &'a mut Context,
 
@@ -64,6 +64,9 @@ pub enum TokenType {
     While,
 
     Eof,
+
+    UnexpectedChar,
+    UnterminatedString,
 }
 
 impl<'a> Lexer<'a> {
@@ -117,9 +120,10 @@ impl<'a> Lexer<'a> {
                 },
                 c if is_digit(c) => return self.number(),
                 c if is_alpha(c) => return self.identifier(),
-                _ => self
-                    .ctx
-                    .report_error(self.start, self.current, "Unexpected character."),
+                _ => self.ctx.report(Error::syntax_err(
+                    &self.new_token(UnexpectedChar),
+                    "Unexpected character.",
+                )),
             };
             self.start = self.current;
         }
@@ -167,8 +171,10 @@ impl<'a> Lexer<'a> {
             self.advance();
         }
         if self.peek().is_none() {
-            self.ctx
-                .report_error(self.start, self.current, "Unterminated string.");
+            self.ctx.report(Error::syntax_err(
+                &self.new_token(TokenType::UnterminatedString),
+                "Unterminated string.",
+            ));
             return None;
         }
         self.advance(); // closing ".

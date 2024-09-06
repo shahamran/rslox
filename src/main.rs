@@ -1,4 +1,5 @@
-mod ast_printer;
+// mod ast_printer;
+mod error;
 mod interpreter;
 mod lex;
 mod parser;
@@ -8,14 +9,13 @@ use std::io;
 use std::io::Write;
 use std::process;
 
-use ariadne::Color;
-use ariadne::{Label, Report, ReportKind, Source};
 use interpreter::Interpreter;
+use error::{Error, Result};
 
 fn main() {
     let args = env::args().collect::<Vec<_>>();
     let res = if args.len() > 2 {
-        Err(Error::usage_error("Usage: rslox [script]\n"))
+        Err(Error::usage_err(&args[0]))
     } else if args.len() == 2 {
         run_file(args[1].clone())
     } else {
@@ -23,22 +23,21 @@ fn main() {
     };
     if let Err(e) = res {
         eprint!("{}", e.message);
-        process::exit(e.code);
+        process::exit(e.exit_code());
     }
 }
 
-fn run_file(path: String) -> Result<(), Error> {
-    let content = std::fs::read_to_string(&path)
-        .map_err(|e| Error::io_error(format!("failed to read script {path:?}: {e}")))?;
+fn run_file(path: String) -> Result<()> {
+    let content = std::fs::read_to_string(&path)?;
     let mut ctx = Context::new(SourceId::File(path), content);
     run(&mut ctx);
-    match ctx.has_error {
-        true => Err(Error::value_error("".into())),
-        false => Ok(()),
+    match ctx.error {
+        Some(e) => Err(e),
+        None => Ok(()),
     }
 }
 
-fn run_prompt() -> Result<(), Error> {
+fn run_prompt() -> Result<()> {
     loop {
         print!("> ");
         io::stdout().flush()?;
@@ -64,26 +63,26 @@ fn run(ctx: &mut Context) {
             break;
         }
     }
-    let tree = {
+    let stmts = {
         let mut parser = parser::Parser::new(ctx, tokens);
         parser.parse()
     };
-    if ctx.has_error {
+    if ctx.error.is_some() {
         return;
     }
-    if let Some(t) = tree {
-        match Interpreter.evaluate(&t) {
-            Ok(literal) => println!("{}", literal.to_string()),
-            Err(e) => ctx.report_error(e.token.offset, e.token.offset + e.token.length, e.message),
+    for stmt in stmts {
+        match Interpreter.execute(&stmt) {
+            Ok(()) => {}
+            Err(e) => ctx.report(e),
         }
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 struct Context {
     src_id: SourceId,
     source: String,
-    has_error: bool,
+    error: Option<Error>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -92,35 +91,13 @@ enum SourceId {
     File(String),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct Error {
-    code: i32,
-    message: String,
-}
-
 impl Context {
     fn new(src_id: SourceId, source: String) -> Self {
-        let has_error = false;
         Self {
             src_id,
             source,
-            has_error,
+            error: None,
         }
-    }
-
-    fn report_error(&mut self, start: usize, end: usize, message: &str) {
-        self.has_error = true;
-        let source = &self.source;
-        let src_id = self.src_id.as_ref();
-        Report::build(ReportKind::Error, src_id, start)
-            .with_label(
-                Label::new((src_id, start..end))
-                    .with_color(Color::Red)
-                    .with_message(message),
-            )
-            .finish()
-            .eprint((src_id, Source::from(source)))
-            .unwrap();
     }
 }
 
@@ -130,30 +107,5 @@ impl AsRef<str> for SourceId {
             SourceId::Prompt => "<prompt>",
             SourceId::File(f) => f,
         }
-    }
-}
-
-impl Error {
-    fn usage_error(usage: &str) -> Self {
-        Self {
-            code: 64,
-            message: usage.into(),
-        }
-    }
-
-    fn value_error(message: String) -> Self {
-        let code = 65;
-        Self { code, message }
-    }
-
-    fn io_error(message: String) -> Self {
-        let code = 74;
-        Self { code, message }
-    }
-}
-
-impl From<io::Error> for Error {
-    fn from(e: io::Error) -> Self {
-        Self::io_error(e.to_string())
     }
 }

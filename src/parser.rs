@@ -1,7 +1,6 @@
-use crate::{
-    lex::{Token, TokenType},
-    Context,
-};
+use crate::error::{Error, Result};
+use crate::lex::{Token, TokenType};
+use crate::Context;
 
 #[derive(Debug, PartialEq)]
 pub struct Parser<'a> {
@@ -23,18 +22,35 @@ pub enum Expr {
         right: Box<Expr>,
     },
     Grouping(Box<Expr>),
+    Variable(Token),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Stmt {
+    Var {
+        name: Token,
+        initializer: Option<Expr>,
+    },
+    Expression(Expr),
+    Print(Expr),
 }
 
 impl Expr {
-    pub fn accept<V: Visitor>(&self, visitor: &V) -> V::Return {
+    pub fn accept<V: Visitor<Expr>>(&self, visitor: &V) -> V::Return {
         visitor.visit(self)
     }
 }
 
-pub trait Visitor {
+impl Stmt {
+    pub fn accept<V: Visitor<Stmt>>(&self, visitor: &V) -> V::Return {
+        visitor.visit(self)
+    }
+}
+
+pub trait Visitor<T> {
     type Return;
 
-    fn visit(&self, expr: &Expr) -> Self::Return;
+    fn visit(&self, value: &T) -> Self::Return;
 }
 
 impl<'a> Parser<'a> {
@@ -46,15 +62,70 @@ impl<'a> Parser<'a> {
         }
     }
 
-    pub fn parse(&mut self) -> Option<Expr> {
-        self.expression().ok()
+    pub fn parse(&mut self) -> Vec<Stmt> {
+        let mut stmts = Vec::new();
+        while !self.is_eof() {
+            match self.declaration() {
+                Ok(stmt) => stmts.push(stmt),
+                Err(err) => {
+                    self.synchronize();
+                    self.ctx.report(err);
+                }
+            }
+        }
+        stmts
     }
 
-    fn expression(&mut self) -> Result<Expr, ()> {
+    fn declaration(&mut self) -> Result<Stmt> {
+        if self.matches(&[TokenType::Var]) {
+            self.var_declaration()
+        } else {
+            self.statement()
+        }
+    }
+
+    fn var_declaration(&mut self) -> Result<Stmt> {
+        let name = match &self.peek().token_type {
+            TokenType::Identifier(_) => self.peek().clone(),
+            _ => return Err(Error::syntax_err(self.peek(), "Expected variable name.")),
+        };
+        let initializer = match self.matches(&[TokenType::Equal]) {
+            true => Some(self.expression()?),
+            false => None,
+        };
+        self.consume(
+            &TokenType::Semicolon,
+            "Expected ';' after variable declaration.",
+        )?;
+        let name = name.clone();
+        Ok(Stmt::Var { name, initializer })
+    }
+
+    fn statement(&mut self) -> Result<Stmt> {
+        if self.matches(&[TokenType::Print]) {
+            self.print_statement()
+        } else {
+            self.expression_statement()
+        }
+    }
+
+    fn print_statement(&mut self) -> Result<Stmt> {
+        let expr = self.expression()?;
+        self.consume(&TokenType::Semicolon, "Expected ';' after value.")?;
+        Ok(Stmt::Print(expr))
+    }
+
+    fn expression_statement(&mut self) -> Result<Stmt> {
+        let expr = self.expression()?;
+        self.consume(&TokenType::Semicolon, "Expected ';' after expression.")?;
+        Ok(Stmt::Expression(expr))
+    }
+
+    fn expression(&mut self) -> Result<Expr> {
         self.equality()
     }
 
-    fn equality(&mut self) -> Result<Expr, ()> {
+    fn equality(&mut self) -> Result<Expr> {
         use TokenType::{BangEqual, EqualEqual};
         let mut expr = self.comparison()?;
         while self.matches(&[BangEqual, EqualEqual]) {
@@ -69,7 +140,7 @@ impl<'a> Parser<'a> {
         Ok(expr)
     }
 
-    fn comparison(&mut self) -> Result<Expr, ()> {
+    fn comparison(&mut self) -> Result<Expr> {
         use TokenType::{Greater, GreaterEqual, Less, LessEqual};
         let mut expr = self.term()?;
         while self.matches(&[Greater, GreaterEqual, Less, LessEqual]) {
@@ -84,7 +155,7 @@ impl<'a> Parser<'a> {
         Ok(expr)
     }
 
-    fn term(&mut self) -> Result<Expr, ()> {
+    fn term(&mut self) -> Result<Expr> {
         let mut expr = self.factor()?;
         while self.matches(&[TokenType::Minus, TokenType::Plus]) {
             let op = self.previous().clone();
@@ -98,7 +169,7 @@ impl<'a> Parser<'a> {
         Ok(expr)
     }
 
-    fn factor(&mut self) -> Result<Expr, ()> {
+    fn factor(&mut self) -> Result<Expr> {
         let mut expr = self.unary()?;
         while self.matches(&[TokenType::Star, TokenType::Slash]) {
             let op = self.previous().clone();
@@ -112,7 +183,7 @@ impl<'a> Parser<'a> {
         Ok(expr)
     }
 
-    fn unary(&mut self) -> Result<Expr, ()> {
+    fn unary(&mut self) -> Result<Expr> {
         Ok(if self.matches(&[TokenType::Bang, TokenType::Minus]) {
             Expr::Unary {
                 op: self.previous().clone(),
@@ -123,7 +194,7 @@ impl<'a> Parser<'a> {
         })
     }
 
-    fn primary(&mut self) -> Result<Expr, ()> {
+    fn primary(&mut self) -> Result<Expr> {
         use TokenType::*;
         Ok(match &self.advance().token_type {
             False | True | Nil | String(_) | Number(_) => Expr::Literal(self.previous().clone()),
@@ -132,11 +203,9 @@ impl<'a> Parser<'a> {
                 self.consume(&RightParen, "Expected ')' after expression.")?;
                 Expr::Grouping(Box::new(expr))
             }
+            Identifier(_) => Expr::Variable(self.previous().clone()),
             _ => {
-                let t = self.previous();
-                let (start, end) = (t.offset, t.offset + t.length);
-                self.ctx.report_error(start, end, "Expected expression.");
-                return Err(());
+                return Err(Error::syntax_err(self.previous(), "Expected expression."));
             }
         })
     }
@@ -175,14 +244,28 @@ impl<'a> Parser<'a> {
         &self.tokens[self.current.saturating_sub(1)]
     }
 
-    fn consume(&mut self, token_type: &TokenType, message: &str) -> Result<&Token, ()> {
+    fn consume(&mut self, token_type: &TokenType, message: &'static str) -> Result<&Token> {
         if self.check(token_type) {
             Ok(self.advance())
         } else {
-            let t = self.peek();
-            let (start, end) = (t.offset, t.offset + t.length);
-            self.ctx.report_error(start, end, message);
-            Err(())
+            Err(Error::syntax_err(self.peek(), message))
+        }
+    }
+
+    fn synchronize(&mut self) {
+        use TokenType::*;
+        self.advance();
+        while !self.is_eof() {
+            if &self.previous().token_type == &Semicolon {
+                return;
+            }
+            if matches!(
+                &self.peek().token_type,
+                Class | Fun | Var | For | If | While | Print | Return
+            ) {
+                return;
+            }
+            self.advance();
         }
     }
 }
