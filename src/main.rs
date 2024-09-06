@@ -1,4 +1,5 @@
 // mod ast_printer;
+mod environment;
 mod error;
 mod interpreter;
 mod lex;
@@ -70,8 +71,9 @@ fn run(ctx: &mut Context) {
     if ctx.error.is_some() {
         return;
     }
+    let interpreter = Interpreter::default();
     for stmt in stmts {
-        match Interpreter.execute(&stmt) {
+        match interpreter.execute(&stmt) {
             Ok(()) => {}
             Err(e) => ctx.report(e),
         }

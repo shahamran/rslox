@@ -1,9 +1,14 @@
+use std::cell::RefCell;
+
+use crate::environment::Environment;
 use crate::error::{Error, Result};
 use crate::lex::{Token, TokenType};
 use crate::parser::{Expr, Stmt, Visitor};
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct Interpreter;
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct Interpreter {
+    environment: RefCell<Environment>,
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Literal {
@@ -22,14 +27,14 @@ impl Visitor<Expr> for Interpreter {
             Expr::Unary { op, expr } => self.eval_unary(op, expr),
             Expr::Binary { left, op, right } => self.eval_binary(left, op, right),
             Expr::Grouping(expr) => self.evaluate(expr),
-            Expr::Variable(_) => todo!(),
+            Expr::Variable(name) => self.environment.borrow().get(name).cloned(),
         }
     }
 }
 
 impl Interpreter {
     pub fn execute(&self, stmt: &Stmt) -> Result<()> {
-        Ok(stmt.accept(self))
+        stmt.accept(self)
     }
 
     pub fn evaluate(&self, expr: &Expr) -> Result<Literal> {
@@ -84,22 +89,26 @@ impl Interpreter {
 }
 
 impl Visitor<Stmt> for Interpreter {
-    type Return = ();
+    type Return = Result<()>;
 
     fn visit(&self, stmt: &Stmt) -> Self::Return {
         match stmt {
-            Stmt::Var {
-                name: ident,
-                initializer: expr,
-            } => todo!(),
-            Stmt::Expression(expr) => {
-                self.evaluate(expr).unwrap();
+            Stmt::Var { name, initializer } => {
+                let value = match initializer {
+                    Some(expr) => self.evaluate(expr)?,
+                    None => Literal::Nil,
+                };
+                let name = name.lexeme.clone();
+                self.environment.borrow_mut().define(name, value);
+                Ok(())
             }
+            Stmt::Expression(expr) => self.evaluate(expr).map(|_| ()),
             Stmt::Print(expr) => {
-                let literal = self.evaluate(expr).unwrap();
+                let literal = self.evaluate(expr)?;
                 println!("{}", literal.to_string());
+                Ok(())
             }
-        };
+        }
     }
 }
 

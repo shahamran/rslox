@@ -89,6 +89,7 @@ impl<'a> Parser<'a> {
             TokenType::Identifier(_) => self.peek().clone(),
             _ => return Err(Error::syntax_err(self.peek(), "Expected variable name.")),
         };
+        self.advance();
         let initializer = match self.matches(&[TokenType::Equal]) {
             true => Some(self.expression()?),
             false => None,
@@ -97,7 +98,6 @@ impl<'a> Parser<'a> {
             &TokenType::Semicolon,
             "Expected ';' after variable declaration.",
         )?;
-        let name = name.clone();
         Ok(Stmt::Var { name, initializer })
     }
 
