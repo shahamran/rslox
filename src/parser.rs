@@ -41,14 +41,14 @@ pub enum Stmt {
         initializer: Option<Expr>,
     },
     Expression(Expr),
-    Print(Expr),
-    Block(Vec<Stmt>),
-    ReplExpression(Expr),
     If {
         condition: Expr,
         then_branch: Box<Stmt>,
         else_branch: Option<Box<Stmt>>,
     },
+    Print(Expr),
+    ReplExpression(Expr),
+    Block(Vec<Stmt>),
 }
 
 impl<'a> Parser<'a> {
