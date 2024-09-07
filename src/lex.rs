@@ -1,8 +1,9 @@
-use crate::{error::Error, Context};
+use crate::error::Error;
+use crate::Lox;
 
 #[derive(Debug, PartialEq)]
 pub struct Lexer<'a> {
-    ctx: &'a mut Context,
+    lox: &'a mut Lox,
 
     // offset in which lexeme starts
     start: usize,
@@ -70,9 +71,9 @@ pub enum TokenType {
 }
 
 impl<'a> Lexer<'a> {
-    pub fn new(ctx: &'a mut Context) -> Self {
+    pub fn new(lox: &'a mut Lox) -> Self {
         Self {
-            ctx,
+            lox,
             start: 0,
             current: 0,
         }
@@ -120,7 +121,7 @@ impl<'a> Lexer<'a> {
                 },
                 c if is_digit(c) => return self.number(),
                 c if is_alpha(c) => return self.identifier(),
-                _ => self.ctx.report(Error::syntax_err(
+                _ => self.lox.report(Error::syntax_err(
                     &self.new_token(UnexpectedChar),
                     "Unexpected character.",
                 )),
@@ -137,7 +138,7 @@ impl<'a> Lexer<'a> {
 
     fn advance(&mut self) -> Option<u8> {
         self.current += 1;
-        self.ctx.source.as_bytes().get(self.current - 1).copied()
+        self.lox.source.as_bytes().get(self.current - 1).copied()
     }
 
     fn matches(&mut self, c: u8) -> bool {
@@ -150,17 +151,17 @@ impl<'a> Lexer<'a> {
     }
 
     fn peek(&self) -> Option<u8> {
-        self.ctx.source.as_bytes().get(self.current).copied()
+        self.lox.source.as_bytes().get(self.current).copied()
     }
 
     fn peek_next(&self) -> Option<u8> {
-        self.ctx.source.as_bytes().get(self.current + 1).copied()
+        self.lox.source.as_bytes().get(self.current + 1).copied()
     }
 
     fn new_token(&self, token_type: TokenType) -> Token {
         Token {
             token_type,
-            lexeme: self.ctx.source[self.start..self.current].to_string(),
+            lexeme: self.lox.source[self.start..self.current].to_string(),
             offset: self.start,
             length: self.current - self.start,
         }
@@ -171,7 +172,7 @@ impl<'a> Lexer<'a> {
             self.advance();
         }
         if self.peek().is_none() {
-            self.ctx.report(Error::syntax_err(
+            self.lox.report(Error::syntax_err(
                 &self.new_token(TokenType::UnterminatedString),
                 "Unterminated string.",
             ));
@@ -203,7 +204,7 @@ impl<'a> Lexer<'a> {
     }
 
     fn read_lexeme(&self) -> &str {
-        &self.ctx.source[self.start..self.current]
+        &self.lox.source[self.start..self.current]
     }
 
     fn number(&mut self) -> Token {
@@ -276,8 +277,8 @@ mod tests {
 
     fn all_tokens(source: &str) -> Vec<Token> {
         let source = source.to_string();
-        let mut ctx = Context::new(SourceId::Prompt, source);
-        let mut lexer = Lexer::new(&mut ctx);
+        let mut lox = Lox::new(SourceId::Prompt, source);
+        let mut lexer = Lexer::new(&mut lox);
         let mut tokens = Vec::new();
         let mut is_eof = false;
         while !is_eof {

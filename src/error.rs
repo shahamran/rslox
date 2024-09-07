@@ -3,7 +3,7 @@ use std::io;
 use ariadne::{Color, Label, Report, ReportKind, Source};
 
 use crate::lex::Token;
-use crate::Context;
+use crate::Lox;
 
 pub type Result<T> = core::result::Result<T, Error>;
 
@@ -57,7 +57,7 @@ impl Error {
     }
 }
 
-impl Context {
+impl Lox {
     pub fn report(&mut self, err: Error) {
         let err = self.error.insert(err);
         let (start, end) = match &err.token {

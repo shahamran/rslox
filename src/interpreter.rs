@@ -123,7 +123,7 @@ impl Visitor<Stmt> for Interpreter {
             Stmt::Expression(expr) => self.evaluate(expr).map(|_| ())?,
             Stmt::Print(expr) => {
                 let literal = self.evaluate(expr)?;
-                println!("{}", literal.to_string());
+                println!("{literal}");
             }
             Stmt::Block(statements) => self.execute_block(statements)?,
         }
@@ -167,13 +167,13 @@ impl From<Token> for Literal {
     }
 }
 
-impl ToString for Literal {
-    fn to_string(&self) -> String {
+impl std::fmt::Display for Literal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Literal::Nil => "nil".to_string(),
-            Literal::Boolean(b) => b.to_string(),
-            Literal::Number(n) => n.to_string(),
-            Literal::String(s) => s.clone(),
+            Literal::Nil => write!(f, "nil"),
+            Literal::Boolean(b) => write!(f, "{b}"),
+            Literal::Number(n) => write!(f, "{n}"),
+            Literal::String(s) => write!(f, "{s}"),
         }
     }
 }

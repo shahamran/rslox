@@ -1,10 +1,10 @@
 use crate::error::{Error, Result};
 use crate::lex::{Token, TokenType};
-use crate::Context;
+use crate::Lox;
 
 #[derive(Debug, PartialEq)]
 pub struct Parser<'a> {
-    ctx: &'a mut Context,
+    lox: &'a mut Lox,
     tokens: Vec<Token>,
     current: usize,
 }
@@ -59,9 +59,9 @@ pub trait Visitor<T> {
 }
 
 impl<'a> Parser<'a> {
-    pub fn new(ctx: &'a mut Context, tokens: Vec<Token>) -> Self {
+    pub fn new(lox: &'a mut Lox, tokens: Vec<Token>) -> Self {
         Self {
-            ctx,
+            lox,
             tokens,
             current: 0,
         }
@@ -74,7 +74,7 @@ impl<'a> Parser<'a> {
                 Ok(stmt) => stmts.push(stmt),
                 Err(err) => {
                     self.synchronize();
-                    self.ctx.report(err);
+                    self.lox.report(err);
                 }
             }
         }
@@ -151,7 +151,7 @@ impl<'a> Parser<'a> {
                 let value = Box::new(value);
                 return Ok(Expr::Assign { name, value });
             } else {
-                self.ctx
+                self.lox
                     .report(Error::runtime_err(&equals, "Invalid assignment target."));
             }
         }
@@ -289,7 +289,7 @@ impl<'a> Parser<'a> {
         use TokenType::*;
         self.advance();
         while !self.is_eof() {
-            if &self.previous().token_type == &Semicolon {
+            if self.previous().token_type == Semicolon {
                 return;
             }
             if matches!(
