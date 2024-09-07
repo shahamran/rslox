@@ -101,6 +101,10 @@ impl Lox {
         self.source = source;
         self.error = None;
     }
+
+    fn in_repl(&self) -> bool {
+        self.src_id == SourceId::Prompt
+    }
 }
 
 impl AsRef<str> for SourceId {

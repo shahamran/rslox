@@ -38,6 +38,7 @@ pub enum Stmt {
     Expression(Expr),
     Print(Expr),
     Block(Vec<Stmt>),
+    ReplExpression(Expr),
 }
 
 impl<'a> Parser<'a> {
@@ -112,6 +113,9 @@ impl<'a> Parser<'a> {
 
     fn expression_statement(&mut self) -> Result<Stmt> {
         let expr = self.expression()?;
+        if self.lox.in_repl() && self.matches(&[TokenType::Eof]) {
+            return Ok(Stmt::ReplExpression(expr));
+        }
         self.consume(TokenType::Semicolon, "Expected ';' after expression.")?;
         Ok(Stmt::Expression(expr))
     }

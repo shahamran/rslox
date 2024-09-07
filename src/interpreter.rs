@@ -29,7 +29,7 @@ impl Interpreter {
                 self.environment.define(name, value);
             }
             Stmt::Expression(expr) => self.evaluate(expr).map(|_| ())?,
-            Stmt::Print(expr) => {
+            Stmt::Print(expr) | Stmt::ReplExpression(expr) => {
                 let literal = self.evaluate(expr)?;
                 println!("{literal}");
             }
