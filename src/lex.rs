@@ -20,7 +20,7 @@ pub struct Token {
     pub length: usize,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TokenType {
     LeftParen,
     RightParen,
@@ -44,8 +44,8 @@ pub enum TokenType {
     LessEqual,
 
     Identifier,
-    String(String),
-    Number(f64),
+    String,
+    Number,
 
     And,
     Class,
@@ -191,8 +191,7 @@ impl<'a> Lexer<'a> {
             return None;
         }
         self.advance(); // closing ".
-        let lexeme = self.read_lexeme();
-        Some(self.new_token(TokenType::String(lexeme[1..lexeme.len() - 1].to_string())))
+        Some(self.new_token(TokenType::String))
     }
 
     fn slash(&mut self) -> Option<Token> {
@@ -229,8 +228,7 @@ impl<'a> Lexer<'a> {
                 self.advance();
             }
         }
-        let lexeme = self.read_lexeme();
-        self.new_token(TokenType::Number(lexeme.parse().unwrap()))
+        self.new_token(TokenType::Number)
     }
 
     fn identifier(&mut self) -> Token {

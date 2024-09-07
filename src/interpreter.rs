@@ -1,13 +1,11 @@
-use std::cell::RefCell;
-
 use crate::environment::Environment;
 use crate::error::{Error, Result};
 use crate::lex::{Token, TokenType};
-use crate::parser::{Expr, Stmt, Visitor};
+use crate::parser::{Expr, Stmt};
 
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct Interpreter {
-    environment: RefCell<Environment>,
+    environment: Environment,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -19,45 +17,53 @@ pub enum Literal {
     String(String),
 }
 
-impl Visitor<Expr> for Interpreter {
-    type Return = Result<Literal>;
+impl Interpreter {
+    pub fn execute(&mut self, stmt: &Stmt) -> Result<()> {
+        match stmt {
+            Stmt::Var { name, initializer } => {
+                let value = match initializer {
+                    Some(expr) => self.evaluate(expr)?,
+                    None => Literal::Undefined,
+                };
+                let name = name.lexeme.clone();
+                self.environment.define(name, value);
+            }
+            Stmt::Expression(expr) => self.evaluate(expr).map(|_| ())?,
+            Stmt::Print(expr) => {
+                let literal = self.evaluate(expr)?;
+                println!("{literal}");
+            }
+            Stmt::Block(statements) => self.execute_block(statements)?,
+        }
+        Ok(())
+    }
 
-    fn visit(&self, expr: &Expr) -> Self::Return {
+    pub fn evaluate(&mut self, expr: &Expr) -> Result<Literal> {
         match expr {
             Expr::Literal(t) => Ok(t.clone().into()),
             Expr::Unary { op, expr } => self.eval_unary(op, expr),
             Expr::Binary { left, op, right } => self.eval_binary(left, op, right),
             Expr::Grouping(expr) => self.evaluate(expr),
-            Expr::Variable(name) => self.environment.borrow().get(name).cloned(),
+            Expr::Variable(name) => self.environment.get(name).cloned(),
             Expr::Assign { name, value } => self.eval_assignment(name, value),
         }
     }
-}
 
-impl Interpreter {
-    pub fn execute(&self, stmt: &Stmt) -> Result<()> {
-        stmt.accept(self)
-    }
-
-    pub fn evaluate(&self, expr: &Expr) -> Result<Literal> {
-        expr.accept(self)
-    }
-
-    fn execute_block(&self, statements: &[Stmt]) -> Result<()> {
-        self.environment.borrow_mut().new_block();
+    fn execute_block(&mut self, statements: &[Stmt]) -> Result<()> {
+        self.environment.new_block();
         for stmt in statements {
             if let Err(e) = self.execute(stmt) {
-                self.environment.borrow_mut().remove_block();
+                self.environment.remove_block();
                 return Err(e);
             }
         }
-        self.environment.borrow_mut().remove_block();
+        self.environment.remove_block();
         Ok(())
     }
 
-    fn eval_unary(&self, op: &Token, expr: &Expr) -> Result<Literal> {
+    fn eval_unary(&mut self, op: &Token, expr: &Expr) -> Result<Literal> {
         let right = self.evaluate(expr)?;
-        match &op.token_type {
+        match op.token_type {
             TokenType::Minus => match right {
                 Literal::Number(n) => Ok(Literal::Number(-n)),
                 _ => Err(Error::runtime_err(op, "Operand must be a number.")),
@@ -67,11 +73,11 @@ impl Interpreter {
         }
     }
 
-    fn eval_binary(&self, left: &Expr, op: &Token, right: &Expr) -> Result<Literal> {
+    fn eval_binary(&mut self, left: &Expr, op: &Token, right: &Expr) -> Result<Literal> {
         let left = self.evaluate(left)?;
         let right = self.evaluate(right)?;
         let num_operands = || Error::runtime_err(op, "Operands must be numbers.");
-        match &op.token_type {
+        match op.token_type {
             TokenType::Minus => num_op(|a, b| a - b, left, right).ok_or_else(num_operands),
             TokenType::Slash => num_op(|a, b| a / b, left, right).ok_or_else(num_operands),
             TokenType::Star => num_op(|a, b| a * b, left, right).ok_or_else(num_operands),
@@ -101,34 +107,10 @@ impl Interpreter {
         }
     }
 
-    fn eval_assignment(&self, name: &Token, value: &Expr) -> Result<Literal> {
+    fn eval_assignment(&mut self, name: &Token, value: &Expr) -> Result<Literal> {
         let value = self.evaluate(value)?;
-        self.environment.borrow_mut().assign(name, &value)?;
+        self.environment.assign(name, &value)?;
         Ok(value)
-    }
-}
-
-impl Visitor<Stmt> for Interpreter {
-    type Return = Result<()>;
-
-    fn visit(&self, stmt: &Stmt) -> Self::Return {
-        match stmt {
-            Stmt::Var { name, initializer } => {
-                let value = match initializer {
-                    Some(expr) => self.evaluate(expr)?,
-                    None => Literal::Undefined,
-                };
-                let name = name.lexeme.clone();
-                self.environment.borrow_mut().define(name, value);
-            }
-            Stmt::Expression(expr) => self.evaluate(expr).map(|_| ())?,
-            Stmt::Print(expr) => {
-                let literal = self.evaluate(expr)?;
-                println!("{literal}");
-            }
-            Stmt::Block(statements) => self.execute_block(statements)?,
-        }
-        Ok(())
     }
 }
 
@@ -161,8 +143,8 @@ impl From<Token> for Literal {
             Nil => Self::Nil,
             False => Self::Boolean(false),
             True => Self::Boolean(true),
-            Number(n) => Self::Number(n),
-            String(s) => Self::String(s),
+            Number => Self::Number(token.lexeme.parse().unwrap()),
+            String => Self::String(token.lexeme[1..token.lexeme.len() - 1].to_string()),
             _ => unreachable!("literal parsing error"),
         }
     }

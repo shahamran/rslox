@@ -40,24 +40,6 @@ pub enum Stmt {
     Block(Vec<Stmt>),
 }
 
-impl Expr {
-    pub fn accept<V: Visitor<Expr>>(&self, visitor: &V) -> V::Return {
-        visitor.visit(self)
-    }
-}
-
-impl Stmt {
-    pub fn accept<V: Visitor<Stmt>>(&self, visitor: &V) -> V::Return {
-        visitor.visit(self)
-    }
-}
-
-pub trait Visitor<T> {
-    type Return;
-
-    fn visit(&self, value: &T) -> Self::Return;
-}
-
 impl<'a> Parser<'a> {
     pub fn new(lox: &'a mut Lox, tokens: Vec<Token>) -> Self {
         Self {
@@ -90,14 +72,14 @@ impl<'a> Parser<'a> {
     }
 
     fn var_declaration(&mut self) -> Result<Stmt> {
-        self.consume(&TokenType::Identifier, "Expected variable name.")?;
+        self.consume(TokenType::Identifier, "Expected variable name.")?;
         let name = self.previous().clone();
         let initializer = match self.matches(&[TokenType::Equal]) {
             true => Some(self.expression()?),
             false => None,
         };
         self.consume(
-            &TokenType::Semicolon,
+            TokenType::Semicolon,
             "Expected ';' after variable declaration.",
         )?;
         Ok(Stmt::Var { name, initializer })
@@ -118,19 +100,19 @@ impl<'a> Parser<'a> {
         while !self.check(&TokenType::RightBrace) && !self.is_eof() {
             statements.push(self.declaration()?);
         }
-        self.consume(&TokenType::RightBrace, "Expected '}' after block.")?;
+        self.consume(TokenType::RightBrace, "Expected '}' after block.")?;
         Ok(statements)
     }
 
     fn print_statement(&mut self) -> Result<Stmt> {
         let expr = self.expression()?;
-        self.consume(&TokenType::Semicolon, "Expected ';' after value.")?;
+        self.consume(TokenType::Semicolon, "Expected ';' after value.")?;
         Ok(Stmt::Print(expr))
     }
 
     fn expression_statement(&mut self) -> Result<Stmt> {
         let expr = self.expression()?;
-        self.consume(&TokenType::Semicolon, "Expected ';' after expression.")?;
+        self.consume(TokenType::Semicolon, "Expected ';' after expression.")?;
         Ok(Stmt::Expression(expr))
     }
 
@@ -226,11 +208,11 @@ impl<'a> Parser<'a> {
 
     fn primary(&mut self) -> Result<Expr> {
         use TokenType::*;
-        Ok(match &self.advance().token_type {
-            False | True | Nil | String(_) | Number(_) => Expr::Literal(self.previous().clone()),
+        Ok(match self.advance().token_type {
+            False | True | Nil | String | Number => Expr::Literal(self.previous().clone()),
             LeftParen => {
                 let expr = self.expression()?;
-                self.consume(&RightParen, "Expected ')' after expression.")?;
+                self.consume(RightParen, "Expected ')' after expression.")?;
                 Expr::Grouping(Box::new(expr))
             }
             Identifier => Expr::Variable(self.previous().clone()),
@@ -274,8 +256,8 @@ impl<'a> Parser<'a> {
         &self.tokens[self.current.saturating_sub(1)]
     }
 
-    fn consume(&mut self, token_type: &TokenType, message: &'static str) -> Result<&Token> {
-        if self.check(token_type) {
+    fn consume(&mut self, token_type: TokenType, message: &'static str) -> Result<&Token> {
+        if self.check(&token_type) {
             Ok(self.advance())
         } else {
             Err(Error::syntax_err(self.peek(), message))
@@ -290,7 +272,7 @@ impl<'a> Parser<'a> {
                 return;
             }
             if matches!(
-                &self.peek().token_type,
+                self.peek().token_type,
                 Class | Fun | Var | For | If | While | Print | Return
             ) {
                 return;
