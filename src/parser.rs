@@ -90,11 +90,8 @@ impl<'a> Parser<'a> {
     }
 
     fn var_declaration(&mut self) -> Result<Stmt> {
-        let name = match &self.peek().token_type {
-            TokenType::Identifier(_) => self.peek().clone(),
-            _ => return Err(Error::syntax_err(self.peek(), "Expected variable name.")),
-        };
-        self.advance();
+        self.consume(&TokenType::Identifier, "Expected variable name.")?;
+        let name = self.previous().clone();
         let initializer = match self.matches(&[TokenType::Equal]) {
             true => Some(self.expression()?),
             false => None,
@@ -236,7 +233,7 @@ impl<'a> Parser<'a> {
                 self.consume(&RightParen, "Expected ')' after expression.")?;
                 Expr::Grouping(Box::new(expr))
             }
-            Identifier(_) => Expr::Variable(self.previous().clone()),
+            Identifier => Expr::Variable(self.previous().clone()),
             _ => {
                 return Err(Error::syntax_err(self.previous(), "Expected expression."));
             }

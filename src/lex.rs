@@ -43,7 +43,7 @@ pub enum TokenType {
     Less,
     LessEqual,
 
-    Identifier(String),
+    Identifier,
     String(String),
     Number(f64),
 
@@ -256,7 +256,7 @@ impl<'a> Lexer<'a> {
             "true" => True,
             "var" => Var,
             "while" => While,
-            _ => Identifier(lexeme.to_string()),
+            _ => Identifier,
         };
         self.new_token(token_type)
     }
