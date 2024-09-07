@@ -24,7 +24,13 @@ impl Environment {
     pub fn get(&self, name: &Token) -> Result<&Literal> {
         for values in self.0.iter().rev() {
             if let Some(v) = values.get(&name.lexeme) {
-                return Ok(v);
+                return match v {
+                    Literal::Undefined => Err(Error::runtime_err(
+                        name,
+                        "Variable referenced before assignment.",
+                    )),
+                    _ => Ok(v),
+                };
             }
         }
         Err(Error::runtime_err(name, "Undefined variable."))

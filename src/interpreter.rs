@@ -12,6 +12,7 @@ pub struct Interpreter {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Literal {
+    Undefined,
     Nil,
     Boolean(bool),
     Number(f64),
@@ -115,7 +116,7 @@ impl Visitor<Stmt> for Interpreter {
             Stmt::Var { name, initializer } => {
                 let value = match initializer {
                     Some(expr) => self.evaluate(expr)?,
-                    None => Literal::Nil,
+                    None => Literal::Undefined,
                 };
                 let name = name.lexeme.clone();
                 self.environment.borrow_mut().define(name, value);
@@ -170,6 +171,7 @@ impl From<Token> for Literal {
 impl std::fmt::Display for Literal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Literal::Undefined => write!(f, "undefined"),
             Literal::Nil => write!(f, "nil"),
             Literal::Boolean(b) => write!(f, "{b}"),
             Literal::Number(n) => write!(f, "{n}"),
