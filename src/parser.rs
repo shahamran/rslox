@@ -39,6 +39,11 @@ pub enum Stmt {
     Print(Expr),
     Block(Vec<Stmt>),
     ReplExpression(Expr),
+    If {
+        condition: Expr,
+        then_branch: Box<Stmt>,
+        else_branch: Option<Box<Stmt>>,
+    },
 }
 
 impl<'a> Parser<'a> {
@@ -87,7 +92,9 @@ impl<'a> Parser<'a> {
     }
 
     fn statement(&mut self) -> Result<Stmt> {
-        if self.matches(&[TokenType::Print]) {
+        if self.matches(&[TokenType::If]) {
+            self.if_statement()
+        } else if self.matches(&[TokenType::Print]) {
             self.print_statement()
         } else if self.matches(&[TokenType::LeftBrace]) {
             Ok(Stmt::Block(self.block()?))
@@ -103,6 +110,19 @@ impl<'a> Parser<'a> {
         }
         self.consume(TokenType::RightBrace, "Expected '}' after block.")?;
         Ok(statements)
+    }
+
+    fn if_statement(&mut self) -> Result<Stmt> {
+        self.consume(TokenType::LeftParen, "Expected '(' after 'if'.")?;
+        let condition = self.expression()?;
+        self.consume(TokenType::RightParen, "Expected ')' after if condition.")?;
+        let then_branch = Box::new(self.statement()?);
+        let else_branch = if self.matches(&[TokenType::Else]) {
+            Some(Box::new(self.statement()?))
+        } else {
+            None
+        };
+        Ok(Stmt::If { condition, then_branch, else_branch })
     }
 
     fn print_statement(&mut self) -> Result<Stmt> {
