@@ -40,7 +40,7 @@ impl Interpreter {
                 else_branch,
             } => {
                 let condition = self.evaluate(condition)?;
-                if self.is_truthy(condition) {
+                if self.is_truthy(&condition) {
                     self.execute(&then_branch)?;
                 } else if let Some(else_branch) = else_branch {
                     self.execute(else_branch)?;
@@ -53,6 +53,7 @@ impl Interpreter {
     pub fn evaluate(&mut self, expr: &Expr) -> Result<Literal> {
         match expr {
             Expr::Literal(t) => Ok(t.clone().into()),
+            Expr::Logical { left, op, right } => self.eval_logical(left, op, right),
             Expr::Unary { op, expr } => self.eval_unary(op, expr),
             Expr::Binary { left, op, right } => self.eval_binary(left, op, right),
             Expr::Grouping(expr) => self.evaluate(expr),
@@ -80,9 +81,20 @@ impl Interpreter {
                 Literal::Number(n) => Ok(Literal::Number(-n)),
                 _ => Err(Error::runtime_err(op, "Operand must be a number.")),
             },
-            TokenType::Bang => Ok(Literal::Boolean(!self.is_truthy(right))),
+            TokenType::Bang => Ok(Literal::Boolean(!self.is_truthy(&right))),
             _ => unreachable!("unary expr parsing error"),
         }
+    }
+
+    fn eval_logical(&mut self, left: &Expr, op: &Token, right: &Expr) -> Result<Literal> {
+        let left = self.evaluate(left)?;
+        let left_is_truthy = self.is_truthy(&left);
+        if op.token_type == TokenType::Or && left_is_truthy {
+            return Ok(left);
+        } else if op.token_type == TokenType::And && !left_is_truthy {
+            return Ok(left);
+        }
+        Ok(self.evaluate(right)?)
     }
 
     fn eval_binary(&mut self, left: &Expr, op: &Token, right: &Expr) -> Result<Literal> {
@@ -111,9 +123,9 @@ impl Interpreter {
         }
     }
 
-    fn is_truthy(&self, literal: Literal) -> bool {
+    fn is_truthy(&self, literal: &Literal) -> bool {
         match literal {
-            Literal::Boolean(b) => b,
+            Literal::Boolean(b) => *b,
             Literal::Nil => false,
             _ => true,
         }

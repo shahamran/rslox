@@ -12,6 +12,11 @@ pub struct Parser<'a> {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
     Literal(Token),
+    Logical {
+        left: Box<Expr>,
+        op: Token,
+        right: Box<Expr>,
+    },
     Unary {
         op: Token,
         expr: Box<Expr>,
@@ -122,7 +127,11 @@ impl<'a> Parser<'a> {
         } else {
             None
         };
-        Ok(Stmt::If { condition, then_branch, else_branch })
+        Ok(Stmt::If {
+            condition,
+            then_branch,
+            else_branch,
+        })
     }
 
     fn print_statement(&mut self) -> Result<Stmt> {
@@ -145,7 +154,7 @@ impl<'a> Parser<'a> {
     }
 
     fn assignment(&mut self) -> Result<Expr> {
-        let expr = self.equality()?;
+        let expr = self.or()?;
         if self.matches(&[TokenType::Equal]) {
             let equals = self.previous().clone();
             let value = self.assignment()?;
@@ -157,6 +166,34 @@ impl<'a> Parser<'a> {
                 self.lox
                     .report(Error::runtime_err(&equals, "Invalid assignment target."));
             }
+        }
+        Ok(expr)
+    }
+
+    fn or(&mut self) -> Result<Expr> {
+        let mut expr = self.and()?;
+        while self.matches(&[TokenType::Or]) {
+            let op = self.previous().clone();
+            let right = self.and()?;
+            expr = Expr::Logical {
+                left: Box::new(expr),
+                op,
+                right: Box::new(right),
+            };
+        }
+        Ok(expr)
+    }
+
+    fn and(&mut self) -> Result<Expr> {
+        let mut expr = self.equality()?;
+        while self.matches(&[TokenType::And]) {
+            let op = self.previous().clone();
+            let right = self.equality()?;
+            expr = Expr::Logical {
+                left: Box::new(expr),
+                op,
+                right: Box::new(right),
+            };
         }
         Ok(expr)
     }
