@@ -67,7 +67,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    pub fn parse(&mut self) -> Vec<Stmt> {
+    pub fn parse(mut self) -> Vec<Stmt> {
         let mut stmts = Vec::new();
         while !self.is_eof() {
             match self.declaration() {

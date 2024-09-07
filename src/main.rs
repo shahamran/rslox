@@ -58,19 +58,9 @@ fn run_prompt() -> Result<()> {
 }
 
 fn run(lox: &mut Lox) {
-    let mut scanner = lex::Lexer::new(lox);
-    let mut tokens = Vec::new();
-    loop {
-        let token = scanner.next_token();
-        tokens.push(token);
-        if tokens.last().unwrap().is_eof() {
-            break;
-        }
-    }
-    let stmts = {
-        let mut parser = parser::Parser::new(lox, tokens);
-        parser.parse()
-    };
+    let scanner = lex::Lexer::new(lox);
+    let tokens = scanner.all_tokens();
+    let stmts = parser::Parser::new(lox, tokens).parse();
     if lox.error.is_some() {
         return;
     }

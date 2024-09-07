@@ -79,6 +79,18 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    pub fn all_tokens(mut self) -> Vec<Token> {
+        let mut tokens = Vec::new();
+        loop {
+            let token = self.next_token();
+            tokens.push(token);
+            if tokens.last().unwrap().is_eof() {
+                break;
+            }
+        }
+        tokens
+    }
+
     pub fn next_token(&mut self) -> Token {
         use TokenType::*;
         self.start = self.current;
