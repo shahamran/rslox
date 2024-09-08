@@ -60,6 +60,10 @@ pub enum Stmt {
     },
     Block(Vec<Stmt>),
     Function(Function),
+    Return {
+        keyword: Token,
+        value: Option<Expr>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -167,6 +171,8 @@ impl Parser<'_> {
             self.if_statement()
         } else if self.matches(&[TokenType::Print]) {
             self.print_statement()
+        } else if self.matches(&[TokenType::Return]) {
+            self.return_statement()
         } else if self.matches(&[TokenType::While]) {
             self.while_statement()
         } else if self.matches(&[TokenType::LeftBrace]) {
@@ -256,6 +262,16 @@ impl Parser<'_> {
         }
         self.consume(TokenType::Semicolon, "Expected ';' after expression.")?;
         Ok(Stmt::Expression(expr))
+    }
+
+    fn return_statement(&mut self) -> Result<Stmt> {
+        let keyword = self.previous().clone();
+        let value = match self.check(&TokenType::Semicolon) {
+            true => None,
+            false => Some(self.expression()?),
+        };
+        self.consume(TokenType::Semicolon, "Expected ';' after return value.")?;
+        Ok(Stmt::Return { keyword, value })
     }
 }
 

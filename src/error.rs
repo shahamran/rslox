@@ -2,6 +2,7 @@ use std::io;
 
 use ariadne::{Color, Label, Report, ReportKind, Source};
 
+use crate::interpreter::Literal;
 use crate::lex::Token;
 use crate::Lox;
 
@@ -14,12 +15,13 @@ pub struct Error {
     pub message: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ErrorKind {
     UsageError,
     IoError,
     SyntaxError,
     RuntimeError,
+    Return(Literal),
 }
 
 impl Error {
@@ -47,12 +49,21 @@ impl Error {
         }
     }
 
+    pub fn return_value(value: Literal) -> Self {
+        Self {
+            kind: ErrorKind::Return(value),
+            token: None,
+            message: "".to_string(),
+        }
+    }
+
     pub fn exit_code(&self) -> i32 {
         match self.kind {
             ErrorKind::UsageError => 64,
             ErrorKind::IoError => 74,
             ErrorKind::SyntaxError => 65,
             ErrorKind::RuntimeError => 70,
+            _ => unreachable!(),
         }
     }
 }

@@ -1,5 +1,5 @@
 use crate::environment::Environment;
-use crate::error::{Error, Result};
+use crate::error::{Error, ErrorKind, Result};
 use crate::lex::{Token, TokenType};
 use crate::parser::{Expr, Function, Stmt};
 
@@ -58,6 +58,13 @@ impl Interpreter {
                 }
             }
             Stmt::Function(fun) => self.eval_function_decl(fun)?,
+            Stmt::Return { value, .. } => {
+                let value = match value {
+                    Some(expr) => self.evaluate(expr)?,
+                    None => Literal::Nil,
+                };
+                return Err(Error::return_value(value));
+            }
         }
         Ok(())
     }
@@ -77,13 +84,15 @@ impl Interpreter {
 
     fn execute_block(&mut self, statements: &[Stmt]) -> Result<()> {
         self.environment.new_block();
-        for stmt in statements {
-            if let Err(e) = self.execute(stmt) {
-                self.environment.remove_block();
-                return Err(e);
-            }
-        }
+        let result = self.execute_all(statements);
         self.environment.remove_block();
+        result
+    }
+
+    fn execute_all(&mut self, statements: &[Stmt]) -> Result<()> {
+        for stmt in statements {
+            self.execute(stmt)?;
+        }
         Ok(())
     }
 
@@ -243,7 +252,14 @@ impl Callable {
                     let name = fun.params[i].lexeme.clone();
                     interpreter.environment.define(name, value);
                 }
-                let result = interpreter.execute_block(&fun.body).map(|_| Literal::Nil);
+                let result = match interpreter.execute_all(&fun.body) {
+                    Ok(()) => Ok(Literal::Nil),
+                    Err(Error {
+                        kind: ErrorKind::Return(value),
+                        ..
+                    }) => Ok(value),
+                    Err(err) => Err(err),
+                };
                 interpreter.environment.remove_block();
                 result
             }
