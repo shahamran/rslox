@@ -1,20 +1,11 @@
 use crate::environment::Environment;
 use crate::error::{Error, Result};
 use crate::lex::{Token, TokenType};
-use crate::parser::{Expr, Stmt};
+use crate::parser::{Expr, Literal, Stmt};
 
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct Interpreter {
     environment: Environment,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum Literal {
-    Undefined,
-    Nil,
-    Boolean(bool),
-    Number(f64),
-    String(String),
 }
 
 impl Interpreter {
@@ -161,31 +152,5 @@ const fn is_truthy(literal: &Literal) -> bool {
         Literal::Boolean(b) => *b,
         Literal::Nil => false,
         _ => true,
-    }
-}
-
-impl From<Token> for Literal {
-    fn from(token: Token) -> Self {
-        use TokenType::*;
-        match token.token_type {
-            Nil => Self::Nil,
-            False => Self::Boolean(false),
-            True => Self::Boolean(true),
-            Number => Self::Number(token.lexeme.parse().unwrap()),
-            String => Self::String(token.lexeme[1..token.lexeme.len() - 1].to_string()),
-            _ => unreachable!("literal parsing error"),
-        }
-    }
-}
-
-impl std::fmt::Display for Literal {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Literal::Undefined => write!(f, "undefined"),
-            Literal::Nil => write!(f, "nil"),
-            Literal::Boolean(b) => write!(f, "{b}"),
-            Literal::Number(n) => write!(f, "{n}"),
-            Literal::String(s) => write!(f, "{s}"),
-        }
     }
 }

@@ -11,7 +11,7 @@ pub struct Parser<'a> {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
-    Literal(Token),
+    Literal(Literal),
     Logical {
         left: Box<Expr>,
         op: Token,
@@ -53,6 +53,15 @@ pub enum Stmt {
         body: Box<Stmt>,
     },
     Block(Vec<Stmt>),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Literal {
+    Undefined,
+    Nil,
+    Boolean(bool),
+    Number(f64),
+    String(String),
 }
 
 impl<'a> Parser<'a> {
@@ -101,7 +110,9 @@ impl<'a> Parser<'a> {
     }
 
     fn statement(&mut self) -> Result<Stmt> {
-        if self.matches(&[TokenType::If]) {
+        if self.matches(&[TokenType::For]) {
+            self.for_statement()
+        } else if self.matches(&[TokenType::If]) {
             self.if_statement()
         } else if self.matches(&[TokenType::Print]) {
             self.print_statement()
@@ -121,6 +132,39 @@ impl<'a> Parser<'a> {
         }
         self.consume(TokenType::RightBrace, "Expected '}' after block.")?;
         Ok(statements)
+    }
+
+    fn for_statement(&mut self) -> Result<Stmt> {
+        self.consume(TokenType::LeftParen, "Expected '(' after 'for'.")?;
+        let initializer = if self.matches(&[TokenType::Semicolon]) {
+            None
+        } else if self.matches(&[TokenType::Var]) {
+            Some(self.var_declaration()?)
+        } else {
+            Some(self.expression_statement()?)
+        };
+        let condition = match self.check(&TokenType::Semicolon) {
+            true => Expr::Literal(Literal::Boolean(true)),
+            false => self.expression()?,
+        };
+        self.consume(TokenType::Semicolon, "Expected ';' after loop condition.")?;
+        let increment = match self.check(&TokenType::RightParen) {
+            true => None,
+            false => Some(self.expression()?),
+        };
+        self.consume(TokenType::RightParen, "Expected ')' after for clause.")?;
+        let mut body = self.statement()?;
+        if let Some(expr) = increment {
+            body = Stmt::Block(vec![body, Stmt::Expression(expr)]);
+        }
+        body = Stmt::While {
+            condition,
+            body: Box::new(body),
+        };
+        if let Some(stmt) = initializer {
+            body = Stmt::Block(vec![stmt, body]);
+        }
+        Ok(body)
     }
 
     fn if_statement(&mut self) -> Result<Stmt> {
@@ -284,7 +328,7 @@ impl<'a> Parser<'a> {
     fn primary(&mut self) -> Result<Expr> {
         use TokenType::*;
         Ok(match self.advance().token_type {
-            False | True | Nil | String | Number => Expr::Literal(self.previous().clone()),
+            False | True | Nil | String | Number => Expr::Literal(self.previous().clone().into()),
             LeftParen => {
                 let expr = self.expression()?;
                 self.consume(RightParen, "Expected ')' after expression.")?;
@@ -353,6 +397,32 @@ impl<'a> Parser<'a> {
                 return;
             }
             self.advance();
+        }
+    }
+}
+
+impl From<Token> for Literal {
+    fn from(token: Token) -> Self {
+        use TokenType::*;
+        match token.token_type {
+            Nil => Self::Nil,
+            False => Self::Boolean(false),
+            True => Self::Boolean(true),
+            Number => Self::Number(token.lexeme.parse().unwrap()),
+            String => Self::String(token.lexeme[1..token.lexeme.len() - 1].to_string()),
+            _ => unreachable!("literal parsing error"),
+        }
+    }
+}
+
+impl std::fmt::Display for Literal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Literal::Undefined => write!(f, "undefined"),
+            Literal::Nil => write!(f, "nil"),
+            Literal::Boolean(b) => write!(f, "{b}"),
+            Literal::Number(n) => write!(f, "{n}"),
+            Literal::String(s) => write!(f, "{s}"),
         }
     }
 }
