@@ -48,6 +48,10 @@ pub enum Stmt {
     },
     Print(Expr),
     ReplExpression(Expr),
+    While {
+        condition: Expr,
+        body: Box<Stmt>,
+    },
     Block(Vec<Stmt>),
 }
 
@@ -101,6 +105,8 @@ impl<'a> Parser<'a> {
             self.if_statement()
         } else if self.matches(&[TokenType::Print]) {
             self.print_statement()
+        } else if self.matches(&[TokenType::While]) {
+            self.while_statement()
         } else if self.matches(&[TokenType::LeftBrace]) {
             Ok(Stmt::Block(self.block()?))
         } else {
@@ -138,6 +144,14 @@ impl<'a> Parser<'a> {
         let expr = self.expression()?;
         self.consume(TokenType::Semicolon, "Expected ';' after value.")?;
         Ok(Stmt::Print(expr))
+    }
+
+    fn while_statement(&mut self) -> Result<Stmt> {
+        self.consume(TokenType::LeftParen, "Expected '(' after 'while'.")?;
+        let condition = self.expression()?;
+        self.consume(TokenType::RightParen, "Expected ')' after condition.")?;
+        let body = Box::new(self.statement()?);
+        Ok(Stmt::While { condition, body })
     }
 
     fn expression_statement(&mut self) -> Result<Stmt> {

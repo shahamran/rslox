@@ -39,11 +39,15 @@ impl Interpreter {
                 then_branch,
                 else_branch,
             } => {
-                let condition = self.evaluate(condition)?;
-                if self.is_truthy(&condition) {
+                if is_truthy(&self.evaluate(condition)?) {
                     self.execute(&then_branch)?;
                 } else if let Some(else_branch) = else_branch {
                     self.execute(else_branch)?;
+                }
+            }
+            Stmt::While { condition, body } => {
+                while is_truthy(&self.evaluate(condition)?) {
+                    self.execute(body)?;
                 }
             }
         }
@@ -81,14 +85,14 @@ impl Interpreter {
                 Literal::Number(n) => Ok(Literal::Number(-n)),
                 _ => Err(Error::runtime_err(op, "Operand must be a number.")),
             },
-            TokenType::Bang => Ok(Literal::Boolean(!self.is_truthy(&right))),
+            TokenType::Bang => Ok(Literal::Boolean(!is_truthy(&right))),
             _ => unreachable!("unary expr parsing error"),
         }
     }
 
     fn eval_logical(&mut self, left: &Expr, op: &Token, right: &Expr) -> Result<Literal> {
         let left = self.evaluate(left)?;
-        let left_is_truthy = self.is_truthy(&left);
+        let left_is_truthy = is_truthy(&left);
         if op.token_type == TokenType::Or && left_is_truthy {
             return Ok(left);
         } else if op.token_type == TokenType::And && !left_is_truthy {
@@ -123,14 +127,6 @@ impl Interpreter {
         }
     }
 
-    fn is_truthy(&self, literal: &Literal) -> bool {
-        match literal {
-            Literal::Boolean(b) => *b,
-            Literal::Nil => false,
-            _ => true,
-        }
-    }
-
     fn eval_assignment(&mut self, name: &Token, value: &Expr) -> Result<Literal> {
         let value = self.evaluate(value)?;
         self.environment.assign(name, &value)?;
@@ -157,6 +153,14 @@ where
     match (left, right) {
         (Number(left), Number(right)) => Some(Boolean(op(left, right))),
         _ => None,
+    }
+}
+
+const fn is_truthy(literal: &Literal) -> bool {
+    match literal {
+        Literal::Boolean(b) => *b,
+        Literal::Nil => false,
+        _ => true,
     }
 }
 
