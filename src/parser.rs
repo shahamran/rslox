@@ -59,6 +59,19 @@ pub enum Stmt {
         body: Box<Stmt>,
     },
     Block(Vec<Stmt>),
+    Function(Function),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Function {
+    pub name: Token,
+    pub params: Vec<Token>,
+    pub body: Vec<Stmt>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum FunctionType {
+    Function,
 }
 
 /// General impl.
@@ -89,11 +102,48 @@ impl Parser<'_> {
     }
 
     fn declaration(&mut self) -> Result<Stmt> {
-        if self.matches(&[TokenType::Var]) {
+        if self.matches(&[TokenType::Fun]) {
+            self.function(FunctionType::Function)
+        } else if self.matches(&[TokenType::Var]) {
             self.var_declaration()
         } else {
             self.statement()
         }
+    }
+
+    fn function(&mut self, kind: FunctionType) -> Result<Stmt> {
+        let name = self
+            .consume(TokenType::Identifier, &format!("Expected {kind} name."))?
+            .clone();
+        self.consume(
+            TokenType::LeftParen,
+            &format!("Expected '(' after {kind} name."),
+        )?;
+        let mut params = Vec::new();
+        if !self.check(&TokenType::RightParen) {
+            loop {
+                if params.len() >= 255 {
+                    self.lox.report(Error::syntax_err(
+                        self.peek(),
+                        "Can't have more than 255 parameters.",
+                    ));
+                }
+                params.push(
+                    self.consume(TokenType::Identifier, "Expected parameter name.")?
+                        .clone(),
+                );
+                if !self.matches(&[TokenType::Comma]) {
+                    break;
+                }
+            }
+        }
+        self.consume(TokenType::RightParen, "Expected ')' after parameters.")?;
+        self.consume(
+            TokenType::LeftBrace,
+            &format!("Expected '{{' before {kind} body."),
+        )?;
+        let body = self.block()?;
+        Ok(Stmt::Function(Function { name, params, body }))
     }
 
     fn var_declaration(&mut self) -> Result<Stmt> {
@@ -418,7 +468,7 @@ impl Parser<'_> {
         &self.tokens[self.current.saturating_sub(1)]
     }
 
-    fn consume(&mut self, token_type: TokenType, message: &'static str) -> Result<&Token> {
+    fn consume(&mut self, token_type: TokenType, message: &str) -> Result<&Token> {
         if self.check(&token_type) {
             Ok(self.advance())
         } else {
@@ -440,6 +490,14 @@ impl Parser<'_> {
                 return;
             }
             self.advance();
+        }
+    }
+}
+
+impl std::fmt::Display for FunctionType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FunctionType::Function => write!(f, "function"),
         }
     }
 }

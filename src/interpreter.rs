@@ -1,7 +1,7 @@
 use crate::environment::Environment;
 use crate::error::{Error, Result};
 use crate::lex::{Token, TokenType};
-use crate::parser::{Expr, Stmt};
+use crate::parser::{Expr, Function, Stmt};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Interpreter {
@@ -21,6 +21,7 @@ pub enum Literal {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Callable {
     Clock,
+    Function(Function),
 }
 
 impl Interpreter {
@@ -56,6 +57,7 @@ impl Interpreter {
                     self.execute(body)?;
                 }
             }
+            Stmt::Function(fun) => self.eval_function_decl(fun)?,
         }
         Ok(())
     }
@@ -169,6 +171,12 @@ impl Interpreter {
             )),
         }
     }
+
+    fn eval_function_decl(&mut self, fun: &Function) -> Result<()> {
+        self.environment
+            .define(fun.name.lexeme.clone(), fun.clone().into());
+        Ok(())
+    }
 }
 
 fn num_op<F>(op: F, left: Literal, right: Literal) -> Option<Literal>
@@ -213,7 +221,7 @@ impl std::fmt::Display for Callable {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Clock => write!(f, "<native fn>"),
-            // Self::User(name) => write!(f, "<fn {name}>"),
+            Self::Function(func) => write!(f, "<fn {}>", &func.name.lexeme),
         }
     }
 }
@@ -227,14 +235,25 @@ impl Callable {
                     .duration_since(std::time::SystemTime::UNIX_EPOCH)
                     .expect("uh oh");
                 Ok(Literal::Number(elapsed.as_millis() as f64 / 1000.0))
-            } // Callable::User(_) => todo!(),
+            }
+            Callable::Function(fun) => {
+                interpreter.environment.new_block();
+                assert_eq!(arguments.len(), fun.params.len());
+                for (i, value) in arguments.into_iter().enumerate() {
+                    let name = fun.params[i].lexeme.clone();
+                    interpreter.environment.define(name, value);
+                }
+                let result = interpreter.execute_block(&fun.body).map(|_| Literal::Nil);
+                interpreter.environment.remove_block();
+                result
+            }
         }
     }
 
     fn arity(&self) -> usize {
         match self {
             Callable::Clock => 0,
-            // Callable::User(_) => todo!(),
+            Callable::Function(fun) => fun.params.len(),
         }
     }
 }
@@ -250,6 +269,12 @@ impl From<Token> for Literal {
             String => Self::String(token.lexeme[1..token.lexeme.len() - 1].to_string()),
             _ => unreachable!("literal parsing error"),
         }
+    }
+}
+
+impl From<Function> for Literal {
+    fn from(fun: Function) -> Self {
+        Literal::Callable(Callable::Function(fun))
     }
 }
 
