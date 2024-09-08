@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::error::{Error, Result};
-use crate::parser::Literal;
+use crate::interpreter::Literal;
 use crate::lex::Token;
 
 #[derive(Debug, Clone, PartialEq)]

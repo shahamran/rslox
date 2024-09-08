@@ -1,4 +1,5 @@
 use crate::error::{Error, Result};
+use crate::interpreter::Literal;
 use crate::lex::{Token, TokenType};
 use crate::Lox;
 
@@ -12,22 +13,27 @@ pub struct Parser<'a> {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
     Literal(Literal),
-    Logical {
-        left: Box<Expr>,
-        op: Token,
-        right: Box<Expr>,
+    Variable(Token),
+    Grouping(Box<Expr>),
+    Call {
+        callee: Box<Expr>,
+        closing_paren: Token,
+        arguments: Vec<Expr>,
     },
     Unary {
         op: Token,
         expr: Box<Expr>,
+    },
+    Logical {
+        left: Box<Expr>,
+        op: Token,
+        right: Box<Expr>,
     },
     Binary {
         left: Box<Expr>,
         op: Token,
         right: Box<Expr>,
     },
-    Grouping(Box<Expr>),
-    Variable(Token),
     Assign {
         name: Token,
         value: Box<Expr>,
@@ -55,15 +61,7 @@ pub enum Stmt {
     Block(Vec<Stmt>),
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum Literal {
-    Undefined,
-    Nil,
-    Boolean(bool),
-    Number(f64),
-    String(String),
-}
-
+/// General impl.
 impl<'a> Parser<'a> {
     pub fn new(lox: &'a mut Lox, tokens: Vec<Token>) -> Self {
         Self {
@@ -72,7 +70,10 @@ impl<'a> Parser<'a> {
             current: 0,
         }
     }
+}
 
+/// Statements parsing.
+impl Parser<'_> {
     pub fn parse(mut self) -> Vec<Stmt> {
         let mut stmts = Vec::new();
         while !self.is_eof() {
@@ -206,7 +207,10 @@ impl<'a> Parser<'a> {
         self.consume(TokenType::Semicolon, "Expected ';' after expression.")?;
         Ok(Stmt::Expression(expr))
     }
+}
 
+/// Expression parsing.
+impl Parser<'_> {
     fn expression(&mut self) -> Result<Expr> {
         self.assignment()
     }
@@ -321,7 +325,46 @@ impl<'a> Parser<'a> {
                 expr: Box::new(self.unary()?),
             }
         } else {
-            self.primary()?
+            self.call()?
+        })
+    }
+
+    fn call(&mut self) -> Result<Expr> {
+        let mut expr = self.primary()?;
+        loop {
+            if self.matches(&[TokenType::LeftParen]) {
+                expr = self.finish_call(expr)?;
+            } else {
+                break;
+            }
+        }
+        Ok(expr)
+    }
+
+    fn finish_call(&mut self, expr: Expr) -> Result<Expr> {
+        let mut arguments = vec![];
+        if !self.check(&TokenType::RightParen) {
+            loop {
+                if arguments.len() >= 255 {
+                    // TODO: this reports the same error for each argument after the 255'th.
+                    self.lox.report(Error::syntax_err(
+                        self.peek(),
+                        "Can't have more than 255 arguments.",
+                    ));
+                }
+                arguments.push(self.expression()?);
+                if !self.matches(&[TokenType::Comma]) {
+                    break;
+                }
+            }
+        }
+        let closing_paren = self
+            .consume(TokenType::RightParen, "Expected ')' after arguments.")?
+            .clone();
+        Ok(Expr::Call {
+            callee: Box::new(expr),
+            closing_paren,
+            arguments,
         })
     }
 
@@ -397,32 +440,6 @@ impl<'a> Parser<'a> {
                 return;
             }
             self.advance();
-        }
-    }
-}
-
-impl From<Token> for Literal {
-    fn from(token: Token) -> Self {
-        use TokenType::*;
-        match token.token_type {
-            Nil => Self::Nil,
-            False => Self::Boolean(false),
-            True => Self::Boolean(true),
-            Number => Self::Number(token.lexeme.parse().unwrap()),
-            String => Self::String(token.lexeme[1..token.lexeme.len() - 1].to_string()),
-            _ => unreachable!("literal parsing error"),
-        }
-    }
-}
-
-impl std::fmt::Display for Literal {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Literal::Undefined => write!(f, "undefined"),
-            Literal::Nil => write!(f, "nil"),
-            Literal::Boolean(b) => write!(f, "{b}"),
-            Literal::Number(n) => write!(f, "{n}"),
-            Literal::String(s) => write!(f, "{s}"),
         }
     }
 }
