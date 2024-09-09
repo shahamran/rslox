@@ -79,7 +79,7 @@ impl Interpreter {
             Expr::Unary { op, expr } => self.eval_unary(op, expr),
             Expr::Binary { left, op, right } => self.eval_binary(left, op, right),
             Expr::Grouping(expr) => self.evaluate(expr),
-            Expr::Variable(name) => Ok(self.look_up_variable(name).clone()),
+            Expr::Variable(name) => self.look_up_variable(name).cloned(),
             Expr::Assign { name, value } => self.eval_assignment(name, value),
             expr @ Expr::Call { .. } => self.eval_call(expr),
         }
@@ -149,7 +149,7 @@ impl Interpreter {
     fn eval_assignment(&mut self, name: &Token, value: &Expr) -> Result<Literal> {
         let value = self.evaluate(value)?;
         self.environment
-            .assign(self.locals.get(name).copied(), name, &value);
+            .assign(self.locals.get(name).copied(), name, &value)?;
         Ok(value)
     }
 
@@ -195,7 +195,7 @@ impl Interpreter {
         self.locals.insert(variable.clone(), depth);
     }
 
-    fn look_up_variable(&self, variable: &Token) -> &Literal {
+    fn look_up_variable(&self, variable: &Token) -> Result<&Literal> {
         self.environment
             .get(self.locals.get(variable).copied(), variable)
     }

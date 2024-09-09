@@ -43,8 +43,8 @@ impl<'a> Resolver<'a> {
                 self.declare(name);
                 if let Some(expr) = initializer {
                     self.resolve_expr(expr);
-                    self.define(name);
                 }
+                self.define(name);
             }
             Stmt::If {
                 condition,
@@ -195,7 +195,6 @@ impl<'a> Resolver<'a> {
 mod tests {
     use super::*;
     use crate::error::ErrorKind;
-    use crate::scanner::TokenType;
     use crate::{Lox, SourceId};
 
     #[test]
@@ -204,15 +203,6 @@ mod tests {
         let stmts = lox.parser().parse();
         Resolver::new(&mut lox).resolve(&stmts);
         assert_eq!(lox.error, None);
-    }
-
-    #[test]
-    fn test_undefined_local() {
-        let mut lox = Lox::new(SourceId::Test, "{print a;}".into());
-        let stmts = lox.parser().parse();
-        Resolver::new(&mut lox).resolve(&stmts);
-        let t = token(TokenType::Identifier, "a", 7, 1);
-        assert_eq!(lox.error, Some(error(t, "Undefined local.")));
     }
 
     #[test]
@@ -235,15 +225,6 @@ mod tests {
             kind: ErrorKind::SyntaxError,
             token: Some(token),
             message: message.to_string(),
-        }
-    }
-
-    fn token(token_type: TokenType, lexeme: &str, offset: usize, length: usize) -> Token {
-        Token {
-            token_type,
-            lexeme: lexeme.to_string(),
-            offset,
-            length,
         }
     }
 }

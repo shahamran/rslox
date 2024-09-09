@@ -25,7 +25,7 @@ fn main() {
     if let Err(e) = res {
         use error::ErrorKind::*;
         match e.kind {
-            UsageError | IoError => eprintln!("{}", e.message),
+            UsageError | IoError => eprintln!("{:?}: {}", e.kind, e.message),
             _ => {}
         }
         process::exit(e.exit_code());

@@ -1,6 +1,6 @@
 use std::io;
 
-use ariadne::{Color, Label, Report, ReportKind, Source};
+use annotate_snippets::{Level, Renderer, Snippet};
 
 use crate::interpreter::Literal;
 use crate::scanner::Token;
@@ -71,21 +71,27 @@ impl Error {
 impl Lox {
     pub fn report(&mut self, err: Error) {
         let err = self.error.insert(err);
-        let (start, end) = match &err.token {
-            Some(t) => (t.offset, t.offset + t.length),
-            None => return eprintln!("{:?}: {}", err.kind, &err.message),
-        };
-        let source = &self.source;
-        let src_id = self.src_id.as_ref();
-        Report::build(ReportKind::Error, src_id, start)
-            .with_label(
-                Label::new((src_id, start..end))
-                    .with_color(Color::Red)
-                    .with_message(format!("{:?}: {}", err.kind, &err.message)),
-            )
-            .finish()
-            .eprint((src_id, Source::from(source)))
-            .unwrap();
+        let mut message = Level::Error.title(&err.message).id(err.kind.as_ref());
+        if let Some(t) = &err.token {
+            message = message.snippet(
+                Snippet::source(&self.source)
+                    .origin(self.src_id.as_ref())
+                    .annotation(Level::Error.span(t.offset..t.offset + t.length)),
+            );
+        }
+        eprintln!("{}", Renderer::styled().render(message));
+    }
+}
+
+impl AsRef<str> for ErrorKind {
+    fn as_ref(&self) -> &str {
+        match self {
+            ErrorKind::UsageError => "usage",
+            ErrorKind::IoError => "io",
+            ErrorKind::SyntaxError => "syntax",
+            ErrorKind::RuntimeError => "runtime",
+            ErrorKind::Return(_) => unreachable!(),
+        }
     }
 }
 
