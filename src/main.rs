@@ -4,6 +4,7 @@ mod error;
 mod interpreter;
 mod lex;
 mod parser;
+mod resolver;
 
 use std::env;
 use std::io;
@@ -12,6 +13,7 @@ use std::process;
 
 use error::{Error, Result};
 use interpreter::Interpreter;
+use resolver::Resolver;
 
 fn main() {
     let args = env::args().collect::<Vec<_>>();
@@ -58,9 +60,8 @@ fn run_prompt() -> Result<()> {
 }
 
 fn run(lox: &mut Lox) {
-    let scanner = lex::Lexer::new(lox);
-    let tokens = scanner.all_tokens();
-    let stmts = parser::Parser::new(lox, tokens).parse();
+    let stmts = lox.parser().parse();
+    Resolver::new(lox).resolve(&stmts);
     if lox.error.is_some() {
         return;
     }
@@ -84,6 +85,8 @@ struct Lox {
 enum SourceId {
     Prompt,
     File(String),
+    #[cfg(test)]
+    Test,
 }
 
 impl Lox {
@@ -105,6 +108,15 @@ impl Lox {
     fn in_repl(&self) -> bool {
         self.src_id == SourceId::Prompt
     }
+
+    fn scan(&mut self) -> Vec<lex::Token> {
+        lex::Lexer::new(self).all_tokens()
+    }
+
+    fn parser(&mut self) -> parser::Parser<'_> {
+        let tokens = self.scan();
+        parser::Parser::new(self, tokens)
+    }
 }
 
 impl AsRef<str> for SourceId {
@@ -112,6 +124,8 @@ impl AsRef<str> for SourceId {
         match self {
             SourceId::Prompt => "<prompt>",
             SourceId::File(f) => f,
+            #[cfg(test)]
+            SourceId::Test => "<test>",
         }
     }
 }

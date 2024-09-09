@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::environment::Environment;
 use crate::error::{Error, ErrorKind, Result};
 use crate::lex::{Token, TokenType};
@@ -6,6 +8,7 @@ use crate::parser::{Expr, Function, Stmt};
 #[derive(Debug, Clone, PartialEq)]
 pub struct Interpreter {
     environment: Environment,
+    locals: HashMap<Token, usize>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -76,7 +79,7 @@ impl Interpreter {
             Expr::Unary { op, expr } => self.eval_unary(op, expr),
             Expr::Binary { left, op, right } => self.eval_binary(left, op, right),
             Expr::Grouping(expr) => self.evaluate(expr),
-            Expr::Variable(name) => self.environment.get(name).cloned(),
+            Expr::Variable(name) => Ok(self.look_up_variable(name).clone()),
             Expr::Assign { name, value } => self.eval_assignment(name, value),
             expr @ Expr::Call { .. } => self.eval_call(expr),
         }
@@ -145,7 +148,8 @@ impl Interpreter {
 
     fn eval_assignment(&mut self, name: &Token, value: &Expr) -> Result<Literal> {
         let value = self.evaluate(value)?;
-        self.environment.assign(name, &value)?;
+        self.environment
+            .assign(self.locals.get(name).copied(), name, &value);
         Ok(value)
     }
 
@@ -186,6 +190,15 @@ impl Interpreter {
             .define(fun.name.lexeme.clone(), fun.clone().into());
         Ok(())
     }
+
+    pub(crate) fn resolve(&mut self, variable: &Token, depth: usize) {
+        self.locals.insert(variable.clone(), depth);
+    }
+
+    fn look_up_variable(&self, variable: &Token) -> &Literal {
+        self.environment
+            .get(self.locals.get(variable).copied(), variable)
+    }
 }
 
 fn num_op<F>(op: F, left: Literal, right: Literal) -> Option<Literal>
@@ -222,7 +235,11 @@ impl Default for Interpreter {
     fn default() -> Self {
         let mut environment = Environment::default();
         environment.define("clock".to_string(), Literal::Callable(Callable::Clock));
-        Self { environment }
+        let locals = Default::default();
+        Self {
+            environment,
+            locals,
+        }
     }
 }
 

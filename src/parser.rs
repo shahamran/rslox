@@ -1,3 +1,5 @@
+use std::fmt;
+
 use crate::error::{Error, Result};
 use crate::interpreter::Literal;
 use crate::lex::{Token, TokenType};
@@ -6,7 +8,7 @@ use crate::Lox;
 #[derive(Debug, PartialEq)]
 pub struct Parser<'a> {
     lox: &'a mut Lox,
-    tokens: Vec<Token>,
+    pub(crate) tokens: Vec<Token>,
     current: usize,
 }
 
@@ -510,8 +512,8 @@ impl Parser<'_> {
     }
 }
 
-impl std::fmt::Display for FunctionType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for FunctionType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             FunctionType::Function => write!(f, "function"),
         }

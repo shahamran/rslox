@@ -12,7 +12,7 @@ pub struct Lexer<'a> {
     current: usize,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct Token {
     pub token_type: TokenType,
     pub lexeme: String,
@@ -20,7 +20,7 @@ pub struct Token {
     pub length: usize,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub enum TokenType {
     LeftParen,
     RightParen,
