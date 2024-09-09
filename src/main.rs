@@ -2,9 +2,9 @@
 mod environment;
 mod error;
 mod interpreter;
-mod lex;
 mod parser;
 mod resolver;
+mod scanner;
 
 use std::env;
 use std::io;
@@ -109,8 +109,8 @@ impl Lox {
         self.src_id == SourceId::Prompt
     }
 
-    fn scan(&mut self) -> Vec<lex::Token> {
-        lex::Lexer::new(self).all_tokens()
+    fn scan(&mut self) -> Vec<scanner::Token> {
+        scanner::Scanner::new(self).all_tokens()
     }
 
     fn parser(&mut self) -> parser::Parser<'_> {

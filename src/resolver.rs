@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
 use crate::error::Error;
-use crate::lex::Token;
 use crate::parser::{Expr, Function, Stmt};
+use crate::scanner::Token;
 use crate::Lox;
 
 pub struct Resolver<'a> {
@@ -195,7 +195,7 @@ impl<'a> Resolver<'a> {
 mod tests {
     use super::*;
     use crate::error::ErrorKind;
-    use crate::lex::TokenType;
+    use crate::scanner::TokenType;
     use crate::{Lox, SourceId};
 
     #[test]

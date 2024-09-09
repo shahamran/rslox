@@ -2,7 +2,7 @@ use crate::error::Error;
 use crate::Lox;
 
 #[derive(Debug, PartialEq)]
-pub struct Lexer<'a> {
+pub struct Scanner<'a> {
     lox: &'a mut Lox,
 
     // offset in which lexeme starts
@@ -70,7 +70,7 @@ pub enum TokenType {
     UnterminatedString,
 }
 
-impl<'a> Lexer<'a> {
+impl<'a> Scanner<'a> {
     pub fn new(lox: &'a mut Lox) -> Self {
         Self {
             lox,
@@ -288,11 +288,11 @@ mod tests {
     fn all_tokens(source: &str) -> Vec<Token> {
         let source = source.to_string();
         let mut lox = Lox::new(SourceId::Prompt, source);
-        let mut lexer = Lexer::new(&mut lox);
+        let mut scanner = Scanner::new(&mut lox);
         let mut tokens = Vec::new();
         let mut is_eof = false;
         while !is_eof {
-            let t = lexer.next_token();
+            let t = scanner.next_token();
             is_eof = t.is_eof();
             tokens.push(t);
         }

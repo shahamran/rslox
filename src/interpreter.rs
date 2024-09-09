@@ -2,8 +2,8 @@ use std::collections::HashMap;
 
 use crate::environment::Environment;
 use crate::error::{Error, ErrorKind, Result};
-use crate::lex::{Token, TokenType};
 use crate::parser::{Expr, Function, Stmt};
+use crate::scanner::{Token, TokenType};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Interpreter {

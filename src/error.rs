@@ -3,7 +3,7 @@ use std::io;
 use ariadne::{Color, Label, Report, ReportKind, Source};
 
 use crate::interpreter::Literal;
-use crate::lex::Token;
+use crate::scanner::Token;
 use crate::Lox;
 
 pub type Result<T> = core::result::Result<T, Error>;

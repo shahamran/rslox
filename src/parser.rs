@@ -2,7 +2,7 @@ use std::fmt;
 
 use crate::error::{Error, Result};
 use crate::interpreter::Literal;
-use crate::lex::{Token, TokenType};
+use crate::scanner::{Token, TokenType};
 use crate::Lox;
 
 #[derive(Debug, PartialEq)]

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::interpreter::Literal;
-use crate::lex::Token;
+use crate::scanner::Token;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Environment(Vec<HashMap<String, Literal>>);
