@@ -70,13 +70,25 @@ impl Error {
 
 impl Lox {
     pub fn report(&mut self, err: Error) {
-        let err = self.error.insert(err);
-        let mut message = Level::Error.title(&err.message).id(err.kind.as_ref());
+        self.annotate_err(Level::Error, err);
+    }
+
+    pub fn warn(&mut self, err: Error) {
+        self.annotate_err(Level::Warning, err);
+    }
+
+    fn annotate_err(&mut self, level: Level, err: Error) {
+        let err = match level {
+            Level::Error => self.error.insert(err),
+            _ => &err,
+        };
+        let title = err.message.to_lowercase();
+        let mut message = level.title(&title).id(err.kind.as_ref());
         if let Some(t) = &err.token {
             message = message.snippet(
                 Snippet::source(&self.source)
                     .origin(self.src_id.as_ref())
-                    .annotation(Level::Error.span(t.offset..t.offset + t.length)),
+                    .annotation(level.span(t.offset..t.offset + t.length)),
             );
         }
         eprintln!("{}", Renderer::styled().render(message));

@@ -184,7 +184,7 @@ impl<'a> Resolver<'a> {
             for (name, variable) in values {
                 if !name.starts_with('_') && variable.status != Status::Used {
                     self.lox
-                        .report(Error::syntax_err(&variable.token, "Unused variable."))
+                        .warn(Error::syntax_err(&variable.token, "Unused variable."));
                 }
             }
         }
@@ -194,7 +194,6 @@ impl<'a> Resolver<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::error::ErrorKind;
     use crate::{Lox, SourceId};
 
     #[test]
@@ -203,28 +202,5 @@ mod tests {
         let stmts = lox.parser().parse();
         Resolver::new(&mut lox).resolve(&stmts);
         assert_eq!(lox.error, None);
-    }
-
-    #[test]
-    fn test_unused_local() {
-        let mut lox = Lox::new(SourceId::Test, "{var a = 3;}".into());
-        let parser = lox.parser();
-        let t = parser
-            .tokens
-            .iter()
-            .find(|&t| t.lexeme == "a")
-            .cloned()
-            .unwrap();
-        let stmts = parser.parse();
-        Resolver::new(&mut lox).resolve(&stmts);
-        assert_eq!(lox.error, Some(error(t, "Unused variable.")));
-    }
-
-    fn error(token: Token, message: &str) -> Error {
-        Error {
-            kind: ErrorKind::SyntaxError,
-            token: Some(token),
-            message: message.to_string(),
-        }
     }
 }
