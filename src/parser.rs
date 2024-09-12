@@ -77,7 +77,7 @@ pub enum Stmt {
     },
     Class {
         name: Token,
-        methods: Vec<Stmt>,
+        methods: Vec<Function>,
     },
 }
 
@@ -140,7 +140,10 @@ impl Parser<'_> {
         self.consume(TokenType::LeftBrace, "Expected '{' before class body.")?;
         let mut methods = Vec::new();
         while !self.check(&TokenType::RightBrace) && !self.is_eof() {
-            methods.push(self.function(FunctionType::Method)?);
+            match self.function(FunctionType::Method)? {
+                Stmt::Function(func) => methods.push(func),
+                _ => unreachable!(),
+            }
         }
         self.consume(TokenType::RightBrace, "Expected '}' after class body.")?;
         Ok(Stmt::Class { name, methods })

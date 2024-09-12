@@ -79,9 +79,12 @@ impl<'a> Resolver<'a> {
                     self.resolve_expr(expr);
                 }
             }
-            Stmt::Class { name, methods: _ } => {
+            Stmt::Class { name, methods } => {
                 self.declare(name);
                 self.define(name);
+                for method in methods {
+                    self.resolve_function(method);
+                }
             }
         }
     }

@@ -28,12 +28,18 @@ pub enum Literal {
 pub enum Callable {
     Clock,
     Function(Function),
-    Class(String),
+    Class(Rc<Class>),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Class {
+    name: String,
+    methods: HashMap<String, Function>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ClassInstance {
-    class_name: String,
+    class: Rc<Class>,
     fields: HashMap<String, Literal>,
 }
 
@@ -171,15 +177,8 @@ impl Interpreter {
     }
 
     fn eval_get(&mut self, object: &Expr, name: &Token) -> Result<Literal> {
-        let prop_name = &name.lexeme;
         match self.evaluate(object)? {
-            Literal::ClassInstance(inst) => match inst.borrow().fields.get(prop_name).cloned() {
-                Some(lit) => Ok(lit),
-                None => Err(Error::runtime_err(
-                    name,
-                    &format!("Undefined property '{prop_name}'."),
-                )),
-            },
+            Literal::ClassInstance(inst) => inst.borrow().get(name),
             _ => Err(Error::runtime_err(name, "Only instances have properties.")),
         }
     }
@@ -234,12 +233,19 @@ impl Interpreter {
         Ok(())
     }
 
-    fn eval_class_decl(&mut self, name: &Token, _methods: &[Stmt]) -> Result<()> {
+    fn eval_class_decl(&mut self, name: &Token, methods: &[Function]) -> Result<()> {
         let class_name = name.lexeme.clone();
         self.environment
             .define(class_name.clone(), Literal::Undefined);
-        let class = Literal::Callable(Callable::Class(class_name));
-        self.environment.assign(Some(0), name, &class)?;
+        let methods = methods
+            .iter()
+            .map(|f| (f.name.lexeme.clone(), f.clone()))
+            .collect();
+        let class = Class {
+            name: class_name,
+            methods,
+        };
+        self.environment.assign(Some(0), name, &class.into())?;
         Ok(())
     }
 
@@ -299,7 +305,7 @@ impl std::fmt::Display for Callable {
         match self {
             Self::Clock => write!(f, "<native fn>"),
             Self::Function(func) => write!(f, "<fn {}>", &func.name.lexeme),
-            Self::Class(name) => write!(f, "<class {name}>"),
+            Self::Class(class) => write!(f, "<class {}>", class.name),
         }
     }
 }
@@ -332,8 +338,10 @@ impl Callable {
                 interpreter.environment.remove_block();
                 result
             }
-            Callable::Class(name) => {
-                let inst = Literal::ClassInstance(Rc::new(RefCell::new(ClassInstance::new(name))));
+            Callable::Class(class) => {
+                let inst = Literal::ClassInstance(Rc::new(RefCell::new(ClassInstance::new(
+                    Rc::clone(class),
+                ))));
                 Ok(inst)
             }
         }
@@ -343,16 +351,29 @@ impl Callable {
         match self {
             Callable::Clock => 0,
             Callable::Function(fun) => fun.params.len(),
-            Callable::Class(_) => 0,
+            Callable::Class { .. } => 0,
         }
     }
 }
 
 impl ClassInstance {
-    fn new(class_name: &str) -> Self {
-        let class_name = class_name.to_string();
-        let fields = Default::default();
-        Self { class_name, fields }
+    fn new(class: Rc<Class>) -> Self {
+        let fields = HashMap::new();
+        Self { class, fields }
+    }
+
+    fn get(&self, name: &Token) -> Result<Literal> {
+        let prop_name = &name.lexeme;
+        if let Some(lit) = self.fields.get(prop_name).cloned() {
+            Ok(lit)
+        } else if let Some(meth) = self.class.methods.get(prop_name) {
+            Ok(Literal::Callable(Callable::Function(meth.clone())))
+        } else {
+            Err(Error::runtime_err(
+                name,
+                &format!("Undefined property '{prop_name}'."),
+            ))
+        }
     }
 }
 
@@ -376,6 +397,12 @@ impl From<Function> for Literal {
     }
 }
 
+impl From<Class> for Literal {
+    fn from(class: Class) -> Self {
+        Self::Callable(Callable::Class(Rc::new(class)))
+    }
+}
+
 impl std::fmt::Display for Literal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -385,7 +412,7 @@ impl std::fmt::Display for Literal {
             Literal::Number(n) => write!(f, "{n}"),
             Literal::String(s) => write!(f, "{s}"),
             Literal::Callable(func) => write!(f, "{func}"),
-            Literal::ClassInstance(inst) => write!(f, "<{} instance>", inst.borrow().class_name),
+            Literal::ClassInstance(inst) => write!(f, "<{} instance>", inst.borrow().class.name),
         }
     }
 }
