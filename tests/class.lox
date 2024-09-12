@@ -1,0 +1,16 @@
+class Foo {}
+
+var f = Foo();
+f.bar = "bar";
+print f.bar + " is bar!";
+
+{
+    class Bar {}
+    var b = Bar();
+    var f = Foo();
+    b.f = f;
+    b.f.bar = "bar";
+    print b.f.bar + " is bar!";
+}
+
+print f.bar;

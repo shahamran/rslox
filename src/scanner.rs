@@ -122,15 +122,17 @@ impl<'a> Scanner<'a> {
                     true => return self.new_token(GreaterEqual),
                     false => return self.new_token(Greater),
                 },
-                b'/' => match self.slash() {
-                    Some(t) => return t,
-                    _ => (),
-                },
+                b'/' => {
+                    if let Some(t) = self.slash() {
+                        return t;
+                    }
+                }
                 b' ' | b'\r' | b'\t' | b'\n' => {}
-                b'"' => match self.string() {
-                    Some(t) => return t,
-                    _ => (),
-                },
+                b'"' => {
+                    if let Some(t) = self.string() {
+                        return t;
+                    }
+                }
                 c if is_digit(c) => return self.number(),
                 c if is_alpha(c) => return self.identifier(),
                 _ => self.lox.report(Error::syntax_err(
@@ -267,7 +269,7 @@ impl Token {
 }
 
 const fn is_digit(c: u8) -> bool {
-    matches!(c, b'0'..=b'9')
+    c.is_ascii_digit()
 }
 
 const fn is_alpha(c: u8) -> bool {

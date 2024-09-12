@@ -40,6 +40,15 @@ pub enum Expr {
         name: Token,
         value: Box<Expr>,
     },
+    Get {
+        object: Box<Expr>,
+        name: Token,
+    },
+    Set {
+        object: Box<Expr>,
+        name: Token,
+        value: Box<Expr>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -66,6 +75,10 @@ pub enum Stmt {
         keyword: Token,
         value: Option<Expr>,
     },
+    Class {
+        name: Token,
+        methods: Vec<Stmt>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -78,6 +91,7 @@ pub struct Function {
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum FunctionType {
     Function,
+    Method,
 }
 
 /// General impl.
@@ -108,13 +122,28 @@ impl Parser<'_> {
     }
 
     fn declaration(&mut self) -> Result<Stmt> {
-        if self.matches(&[TokenType::Fun]) {
+        if self.matches(&[TokenType::Class]) {
+            self.class()
+        } else if self.matches(&[TokenType::Fun]) {
             self.function(FunctionType::Function)
         } else if self.matches(&[TokenType::Var]) {
             self.var_declaration()
         } else {
             self.statement()
         }
+    }
+
+    fn class(&mut self) -> Result<Stmt> {
+        let name = self
+            .consume(TokenType::Identifier, "Expected class name.")?
+            .clone();
+        self.consume(TokenType::LeftBrace, "Expected '{' before class body.")?;
+        let mut methods = Vec::new();
+        while !self.check(&TokenType::RightBrace) && !self.is_eof() {
+            methods.push(self.function(FunctionType::Method)?);
+        }
+        self.consume(TokenType::RightBrace, "Expected '}' after class body.")?;
+        Ok(Stmt::Class { name, methods })
     }
 
     fn function(&mut self, kind: FunctionType) -> Result<Stmt> {
@@ -292,6 +321,12 @@ impl Parser<'_> {
                 let name = t;
                 let value = Box::new(value);
                 return Ok(Expr::Assign { name, value });
+            } else if let Expr::Get { object, name } = expr {
+                return Ok(Expr::Set {
+                    object,
+                    name,
+                    value: Box::new(value),
+                });
             } else {
                 self.lox
                     .report(Error::runtime_err(&equals, "Invalid assignment target."));
@@ -402,6 +437,13 @@ impl Parser<'_> {
         loop {
             if self.matches(&[TokenType::LeftParen]) {
                 expr = self.finish_call(expr)?;
+            } else if self.matches(&[TokenType::Dot]) {
+                expr = Expr::Get {
+                    name: self
+                        .consume(TokenType::Identifier, "Expected property name after '.'.")?
+                        .clone(),
+                    object: Box::new(expr),
+                };
             } else {
                 break;
             }
@@ -516,6 +558,7 @@ impl fmt::Display for FunctionType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             FunctionType::Function => write!(f, "function"),
+            FunctionType::Method => write!(f, "method"),
         }
     }
 }

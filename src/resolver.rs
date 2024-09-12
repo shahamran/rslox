@@ -79,6 +79,10 @@ impl<'a> Resolver<'a> {
                     self.resolve_expr(expr);
                 }
             }
+            Stmt::Class { name, methods: _ } => {
+                self.declare(name);
+                self.define(name);
+            }
         }
     }
 
@@ -102,6 +106,11 @@ impl<'a> Resolver<'a> {
             Expr::Assign { name, value } => {
                 self.resolve_expr(value);
                 self.resolve_local(name);
+            }
+            Expr::Get { object, .. } => self.resolve_expr(object),
+            Expr::Set { object, value, .. } => {
+                self.resolve_expr(object);
+                self.resolve_expr(value)
             }
         }
     }

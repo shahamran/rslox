@@ -1,4 +1,6 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use crate::environment::Environment;
 use crate::error::{Error, ErrorKind, Result};
@@ -19,12 +21,20 @@ pub enum Literal {
     Number(f64),
     String(String),
     Callable(Callable),
+    ClassInstance(Rc<RefCell<ClassInstance>>),
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Callable {
     Clock,
     Function(Function),
+    Class(String),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClassInstance {
+    class_name: String,
+    fields: HashMap<String, Literal>,
 }
 
 impl Interpreter {
@@ -68,6 +78,7 @@ impl Interpreter {
                 };
                 return Err(Error::return_value(value));
             }
+            Stmt::Class { name, methods } => self.eval_class_decl(name, methods)?,
         }
         Ok(())
     }
@@ -82,6 +93,12 @@ impl Interpreter {
             Expr::Variable(name) => self.look_up_variable(name).cloned(),
             Expr::Assign { name, value } => self.eval_assignment(name, value),
             expr @ Expr::Call { .. } => self.eval_call(expr),
+            Expr::Get { object, name } => self.eval_get(object, name),
+            Expr::Set {
+                object,
+                name,
+                value,
+            } => self.eval_set(object, name, value),
         }
     }
 
@@ -153,6 +170,32 @@ impl Interpreter {
         Ok(value)
     }
 
+    fn eval_get(&mut self, object: &Expr, name: &Token) -> Result<Literal> {
+        let prop_name = &name.lexeme;
+        match self.evaluate(object)? {
+            Literal::ClassInstance(inst) => match inst.borrow().fields.get(prop_name).cloned() {
+                Some(lit) => Ok(lit),
+                None => Err(Error::runtime_err(
+                    name,
+                    &format!("Undefined property '{prop_name}'."),
+                )),
+            },
+            _ => Err(Error::runtime_err(name, "Only instances have properties.")),
+        }
+    }
+
+    fn eval_set(&mut self, object: &Expr, name: &Token, value: &Expr) -> Result<Literal> {
+        let inst = match self.evaluate(object)? {
+            Literal::ClassInstance(inst) => inst,
+            _ => return Err(Error::runtime_err(name, "Only instances have fields.")),
+        };
+        let value = self.evaluate(value)?;
+        inst.borrow_mut()
+            .fields
+            .insert(name.lexeme.clone(), value.clone());
+        Ok(value)
+    }
+
     fn eval_call(&mut self, expr: &Expr) -> Result<Literal> {
         let Expr::Call {
             callee,
@@ -188,6 +231,15 @@ impl Interpreter {
     fn eval_function_decl(&mut self, fun: &Function) -> Result<()> {
         self.environment
             .define(fun.name.lexeme.clone(), fun.clone().into());
+        Ok(())
+    }
+
+    fn eval_class_decl(&mut self, name: &Token, _methods: &[Stmt]) -> Result<()> {
+        let class_name = name.lexeme.clone();
+        self.environment
+            .define(class_name.clone(), Literal::Undefined);
+        let class = Literal::Callable(Callable::Class(class_name));
+        self.environment.assign(Some(0), name, &class)?;
         Ok(())
     }
 
@@ -235,10 +287,9 @@ impl Default for Interpreter {
     fn default() -> Self {
         let mut environment = Environment::default();
         environment.define("clock".to_string(), Literal::Callable(Callable::Clock));
-        let locals = Default::default();
         Self {
             environment,
-            locals,
+            locals: Default::default(),
         }
     }
 }
@@ -248,6 +299,7 @@ impl std::fmt::Display for Callable {
         match self {
             Self::Clock => write!(f, "<native fn>"),
             Self::Function(func) => write!(f, "<fn {}>", &func.name.lexeme),
+            Self::Class(name) => write!(f, "<class {name}>"),
         }
     }
 }
@@ -280,6 +332,10 @@ impl Callable {
                 interpreter.environment.remove_block();
                 result
             }
+            Callable::Class(name) => {
+                let inst = Literal::ClassInstance(Rc::new(RefCell::new(ClassInstance::new(name))));
+                Ok(inst)
+            }
         }
     }
 
@@ -287,7 +343,16 @@ impl Callable {
         match self {
             Callable::Clock => 0,
             Callable::Function(fun) => fun.params.len(),
+            Callable::Class(_) => 0,
         }
+    }
+}
+
+impl ClassInstance {
+    fn new(class_name: &str) -> Self {
+        let class_name = class_name.to_string();
+        let fields = Default::default();
+        Self { class_name, fields }
     }
 }
 
@@ -320,6 +385,7 @@ impl std::fmt::Display for Literal {
             Literal::Number(n) => write!(f, "{n}"),
             Literal::String(s) => write!(f, "{s}"),
             Literal::Callable(func) => write!(f, "{func}"),
+            Literal::ClassInstance(inst) => write!(f, "<{} instance>", inst.borrow().class_name),
         }
     }
 }
