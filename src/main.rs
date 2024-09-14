@@ -5,6 +5,7 @@ mod interpreter;
 mod parser;
 mod resolver;
 mod scanner;
+mod types;
 
 use std::env;
 use std::io;

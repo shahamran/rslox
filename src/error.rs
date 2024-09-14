@@ -2,8 +2,8 @@ use std::io;
 
 use annotate_snippets::{Level, Renderer, Snippet};
 
-use crate::interpreter::Literal;
 use crate::scanner::Token;
+use crate::types::Literal;
 use crate::Lox;
 
 pub type Result<T> = core::result::Result<T, Error>;
@@ -88,6 +88,7 @@ impl Lox {
             message = message.snippet(
                 Snippet::source(&self.source)
                     .origin(self.src_id.as_ref())
+                    .fold(true)
                     .annotation(level.span(t.offset..t.offset + t.length)),
             );
         }

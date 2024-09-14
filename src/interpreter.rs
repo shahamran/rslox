@@ -1,46 +1,16 @@
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::environment::Environment;
-use crate::error::{Error, ErrorKind, Result};
+use crate::error::{Error, Result};
 use crate::parser::{Expr, Function, Stmt};
 use crate::scanner::{Token, TokenType};
+use crate::types::{Callable, Class, Literal};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Interpreter {
-    environment: Environment,
+    pub environment: Environment,
     locals: HashMap<Token, usize>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum Literal {
-    Undefined,
-    Nil,
-    Boolean(bool),
-    Number(f64),
-    String(String),
-    Callable(Callable),
-    ClassInstance(Rc<RefCell<ClassInstance>>),
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum Callable {
-    Clock,
-    Function(Function),
-    Class(Rc<Class>),
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct Class {
-    name: String,
-    methods: HashMap<String, Function>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct ClassInstance {
-    class: Rc<Class>,
-    fields: HashMap<String, Literal>,
 }
 
 impl Interpreter {
@@ -105,6 +75,7 @@ impl Interpreter {
                 name,
                 value,
             } => self.eval_set(object, name, value),
+            Expr::This(keyword) => self.look_up_variable(keyword).cloned(),
         }
     }
 
@@ -115,7 +86,7 @@ impl Interpreter {
         result
     }
 
-    fn execute_all(&mut self, statements: &[Stmt]) -> Result<()> {
+    pub fn execute_all(&mut self, statements: &[Stmt]) -> Result<()> {
         for stmt in statements {
             self.execute(stmt)?;
         }
@@ -178,7 +149,12 @@ impl Interpreter {
 
     fn eval_get(&mut self, object: &Expr, name: &Token) -> Result<Literal> {
         match self.evaluate(object)? {
-            Literal::ClassInstance(inst) => inst.borrow().get(name),
+            Literal::ClassInstance(inst) => match inst.borrow().get(name)? {
+                Literal::Callable(f @ Callable::Function { .. }) => {
+                    Ok(f.bind(Rc::clone(&inst)).into())
+                }
+                lit => Ok(lit),
+            },
             _ => Err(Error::runtime_err(name, "Only instances have properties.")),
         }
     }
@@ -212,6 +188,7 @@ impl Interpreter {
         match callee {
             Literal::Callable(mut f) => {
                 if f.arity() == args.len() {
+                    dbg!(&self.locals);
                     f.call(self, args)
                 } else {
                     Err(Error::runtime_err(
@@ -292,127 +269,10 @@ const fn is_truthy(literal: &Literal) -> bool {
 impl Default for Interpreter {
     fn default() -> Self {
         let mut environment = Environment::default();
-        environment.define("clock".to_string(), Literal::Callable(Callable::Clock));
+        environment.define("clock".to_string(), Callable::Clock.into());
         Self {
             environment,
             locals: Default::default(),
-        }
-    }
-}
-
-impl std::fmt::Display for Callable {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Clock => write!(f, "<native fn>"),
-            Self::Function(func) => write!(f, "<fn {}>", &func.name.lexeme),
-            Self::Class(class) => write!(f, "<class {}>", class.name),
-        }
-    }
-}
-
-impl Callable {
-    fn call(&mut self, interpreter: &mut Interpreter, arguments: Vec<Literal>) -> Result<Literal> {
-        match self {
-            Callable::Clock => {
-                let now = std::time::SystemTime::now();
-                let elapsed = now
-                    .duration_since(std::time::SystemTime::UNIX_EPOCH)
-                    .expect("uh oh");
-                Ok(Literal::Number(elapsed.as_millis() as f64 / 1000.0))
-            }
-            Callable::Function(fun) => {
-                interpreter.environment.new_block();
-                assert_eq!(arguments.len(), fun.params.len());
-                for (i, value) in arguments.into_iter().enumerate() {
-                    let name = fun.params[i].lexeme.clone();
-                    interpreter.environment.define(name, value);
-                }
-                let result = match interpreter.execute_all(&fun.body) {
-                    Ok(()) => Ok(Literal::Nil),
-                    Err(Error {
-                        kind: ErrorKind::Return(value),
-                        ..
-                    }) => Ok(value),
-                    Err(err) => Err(err),
-                };
-                interpreter.environment.remove_block();
-                result
-            }
-            Callable::Class(class) => {
-                let inst = Literal::ClassInstance(Rc::new(RefCell::new(ClassInstance::new(
-                    Rc::clone(class),
-                ))));
-                Ok(inst)
-            }
-        }
-    }
-
-    fn arity(&self) -> usize {
-        match self {
-            Callable::Clock => 0,
-            Callable::Function(fun) => fun.params.len(),
-            Callable::Class { .. } => 0,
-        }
-    }
-}
-
-impl ClassInstance {
-    fn new(class: Rc<Class>) -> Self {
-        let fields = HashMap::new();
-        Self { class, fields }
-    }
-
-    fn get(&self, name: &Token) -> Result<Literal> {
-        let prop_name = &name.lexeme;
-        if let Some(lit) = self.fields.get(prop_name).cloned() {
-            Ok(lit)
-        } else if let Some(meth) = self.class.methods.get(prop_name) {
-            Ok(Literal::Callable(Callable::Function(meth.clone())))
-        } else {
-            Err(Error::runtime_err(
-                name,
-                &format!("Undefined property '{prop_name}'."),
-            ))
-        }
-    }
-}
-
-impl From<Token> for Literal {
-    fn from(token: Token) -> Self {
-        use TokenType::*;
-        match token.token_type {
-            Nil => Self::Nil,
-            False => Self::Boolean(false),
-            True => Self::Boolean(true),
-            Number => Self::Number(token.lexeme.parse().unwrap()),
-            String => Self::String(token.lexeme[1..token.lexeme.len() - 1].to_string()),
-            _ => unreachable!("literal parsing error"),
-        }
-    }
-}
-
-impl From<Function> for Literal {
-    fn from(fun: Function) -> Self {
-        Literal::Callable(Callable::Function(fun))
-    }
-}
-
-impl From<Class> for Literal {
-    fn from(class: Class) -> Self {
-        Self::Callable(Callable::Class(Rc::new(class)))
-    }
-}
-
-impl std::fmt::Display for Literal {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Literal::Undefined => write!(f, "undefined"),
-            Literal::Nil => write!(f, "nil"),
-            Literal::Boolean(b) => write!(f, "{b}"),
-            Literal::Number(n) => write!(f, "{n}"),
-            Literal::String(s) => write!(f, "{s}"),
-            Literal::Callable(func) => write!(f, "{func}"),
-            Literal::ClassInstance(inst) => write!(f, "<{} instance>", inst.borrow().class.name),
         }
     }
 }

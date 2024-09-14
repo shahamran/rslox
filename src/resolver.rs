@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::error::Error;
-use crate::parser::{Expr, Function, Stmt};
+use crate::parser::{Expr, Function, FunctionType, Stmt};
 use crate::scanner::Token;
 use crate::Lox;
 
@@ -12,7 +12,7 @@ pub struct Resolver<'a> {
 
 #[derive(Debug, Clone, PartialEq)]
 struct Variable {
-    token: Token,
+    token: Option<Token>,
     status: Status,
 }
 
@@ -72,7 +72,7 @@ impl<'a> Resolver<'a> {
             Stmt::Function(fun) => {
                 self.declare(&fun.name);
                 self.define(&fun.name);
-                self.resolve_function(fun);
+                self.resolve_function(fun, FunctionType::Function);
             }
             Stmt::Return { value, .. } => {
                 if let Some(expr) = value {
@@ -83,7 +83,7 @@ impl<'a> Resolver<'a> {
                 self.declare(name);
                 self.define(name);
                 for method in methods {
-                    self.resolve_function(method);
+                    self.resolve_function(method, FunctionType::Method);
                 }
             }
         }
@@ -115,6 +115,7 @@ impl<'a> Resolver<'a> {
                 self.resolve_expr(object);
                 self.resolve_expr(value)
             }
+            Expr::This(keyword) => self.resolve_local(keyword),
         }
     }
 
@@ -145,8 +146,17 @@ impl<'a> Resolver<'a> {
         self.resolve_local(token);
     }
 
-    fn resolve_function(&mut self, fun: &Function) {
+    fn resolve_function(&mut self, fun: &Function, fun_type: FunctionType) {
         self.begin_scope();
+        if fun_type == FunctionType::Method {
+            self.scopes.last_mut().unwrap().insert(
+                "this".to_string(),
+                Variable {
+                    token: None,
+                    status: Status::Used,
+                },
+            );
+        }
         for param in &fun.params {
             self.declare(param);
             self.define(param);
@@ -168,7 +178,7 @@ impl<'a> Resolver<'a> {
                 }
                 false => {
                     let status = Status::Declared;
-                    let token = name.clone();
+                    let token = Some(name.clone());
                     scope.insert(name.lexeme.clone(), Variable { status, token });
                 }
             }
@@ -178,7 +188,7 @@ impl<'a> Resolver<'a> {
     fn define(&mut self, name: &Token) {
         if let Some(scope) = self.scopes.last_mut() {
             let status = Status::Defined;
-            let token = name.clone();
+            let token = Some(name.clone());
             scope.insert(name.lexeme.clone(), Variable { status, token });
         }
     }
@@ -195,8 +205,8 @@ impl<'a> Resolver<'a> {
         if let Some(values) = popped {
             for (name, variable) in values {
                 if !name.starts_with('_') && variable.status != Status::Used {
-                    self.lox
-                        .warn(Error::syntax_err(&variable.token, "Unused variable."));
+                    let token = variable.token.as_ref().unwrap();
+                    self.lox.warn(Error::syntax_err(token, "Unused variable."));
                 }
             }
         }

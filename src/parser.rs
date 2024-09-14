@@ -1,8 +1,8 @@
 use std::fmt;
 
 use crate::error::{Error, Result};
-use crate::interpreter::Literal;
 use crate::scanner::{Token, TokenType};
+use crate::types::Literal;
 use crate::Lox;
 
 #[derive(Debug, PartialEq)]
@@ -49,6 +49,7 @@ pub enum Expr {
         name: Token,
         value: Box<Expr>,
     },
+    This(Token),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -89,7 +90,7 @@ pub struct Function {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-enum FunctionType {
+pub enum FunctionType {
     Function,
     Method,
 }
@@ -490,6 +491,7 @@ impl Parser<'_> {
                 self.consume(RightParen, "Expected ')' after expression.")?;
                 Expr::Grouping(Box::new(expr))
             }
+            This => Expr::This(self.previous().clone()),
             Identifier => Expr::Variable(self.previous().clone()),
             _ => {
                 return Err(Error::syntax_err(self.previous(), "Expected expression."));

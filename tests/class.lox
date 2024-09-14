@@ -1,16 +1,21 @@
-class Foo {}
-
-var f = Foo();
-f.bar = "bar";
-print f.bar + " is bar!";
-
-{
-    class Bar {}
-    var b = Bar();
-    var f = Foo();
-    b.f = f;
-    b.f.bar = "bar";
-    print b.f.bar + " is bar!";
+class Cake {
+  taste() {
+    var adjective = "delicious";
+    print "The " + this.flavor + " cake is " + adjective + "!";
+  }
 }
 
-print f.bar;
+var cake = Cake();
+cake.flavor = "German chocolate";
+cake.taste(); // Prints "The German chocolate cake is delicious!".
+
+fun notTaste() {
+  var adjective = "Uh oh!";
+  fun inner() {
+    print adjective;
+  }
+  return inner;
+}
+
+cake.taste = notTaste();
+cake.taste();
