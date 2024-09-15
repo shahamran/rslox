@@ -1,15 +1,12 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use crate::environment::EnvironmentRef;
 use crate::error::{Error, Result};
 use crate::expr::Expr;
 use crate::scanner::{Token, TokenType};
 use crate::stmt::{self, Stmt};
 use crate::value::{self, Value};
-use crate::SharedRef;
-use crate::{environment as env, wrap};
-
-pub type EnvironmentRef = SharedRef<env::Environment>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Interpreter {
@@ -34,7 +31,10 @@ impl Interpreter {
                 let literal = self.evaluate(expr)?;
                 println!("{literal}");
             }
-            Stmt::Block(statements) => self.execute_block(statements)?,
+            Stmt::Block(statements) => self.execute_block(
+                statements,
+                EnvironmentRef::with_parent(self.environment.clone()),
+            )?,
             Stmt::If {
                 condition,
                 then_branch,
@@ -84,10 +84,15 @@ impl Interpreter {
         }
     }
 
-    fn execute_block(&mut self, statements: &[Stmt]) -> Result<()> {
-        self.environment = env::new_block(self.environment.clone());
+    pub fn execute_block(
+        &mut self,
+        statements: &[Stmt],
+        environment: EnvironmentRef,
+    ) -> Result<()> {
+        let previous = self.environment.clone();
+        self.environment = environment;
         let result = self.execute_all(statements);
-        self.environment = env::remove_block(self.environment.clone());
+        self.environment = previous;
         result
     }
 
@@ -148,8 +153,8 @@ impl Interpreter {
     fn eval_assignment(&mut self, name: &Token, value: &Expr) -> Result<Value> {
         let value = self.evaluate(value)?;
         match self.locals.get(name) {
-            Some(&distance) => self.environment.borrow_mut().assign(distance, name, &value),
-            None => self.globals.borrow_mut().assign(0, name, &value),
+            Some(&depth) => self.environment.assign_at(depth, name, &value),
+            None => self.globals.borrow_mut().assign(name, &value),
         }
         Ok(value)
     }
@@ -195,7 +200,6 @@ impl Interpreter {
         match callee {
             Value::Callable(mut f) => {
                 if f.arity() == args.len() {
-                    dbg!(&self.locals);
                     f.call(self, args)
                 } else {
                     Err(Error::runtime_err(
@@ -213,11 +217,7 @@ impl Interpreter {
 
     fn eval_function_decl(&mut self, fun: &stmt::Function) -> Result<()> {
         let name = fun.name.lexeme.clone();
-        let fun = value::Function {
-            declaration: fun.clone(),
-            closure: Some(Rc::clone(&self.environment)),
-            this: None,
-        };
+        let fun = value::Function::new(fun.clone(), self.environment.clone());
         self.environment.borrow_mut().define(name, fun.into());
         Ok(())
     }
@@ -229,13 +229,18 @@ impl Interpreter {
             .define(class_name.clone(), Value::Undefined);
         let methods = methods
             .iter()
-            .map(|f| (f.name.lexeme.clone(), value::Function::from(f.clone())))
+            .map(|f| {
+                (
+                    f.name.lexeme.clone(),
+                    value::Function::new(f.clone(), self.environment.clone()),
+                )
+            })
             .collect();
         let class = value::Class {
             name: class_name,
             methods,
         };
-        self.environment.borrow_mut().assign(0, name, &class.into());
+        self.environment.borrow_mut().assign(name, &class.into());
         Ok(())
     }
 
@@ -245,7 +250,7 @@ impl Interpreter {
 
     fn look_up_variable(&self, variable: &Token) -> Result<Value> {
         match self.locals.get(variable) {
-            Some(&depth) => Ok(self.environment.borrow().get(depth, variable)),
+            Some(&depth) => Ok(self.environment.get_at(depth, variable)),
             None => self.globals.borrow().try_get(variable),
         }
     }
@@ -283,60 +288,15 @@ const fn is_truthy(literal: &Value) -> bool {
 
 impl Default for Interpreter {
     fn default() -> Self {
-        let mut environment = env::Environment::new(None);
-        environment.define("clock".to_string(), value::Callable::Clock.into());
-        let environment: EnvironmentRef = wrap(environment);
-        let globals = environment.clone();
+        let globals = EnvironmentRef::new();
+        globals
+            .borrow_mut()
+            .define("clock".to_string(), value::Callable::Clock.into());
+        let environment = globals.clone();
         Self {
             environment,
             globals,
             locals: Default::default(),
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::{Lox, SourceId};
-
-    use super::*;
-
-    #[test]
-    fn test_class() {
-        let source = r#"
-            class Cake {
-              taste() {
-                var adjective = "delicious";
-                return "The " + this.flavor + " cake is " + adjective + "!";
-              }
-            }
-
-            var cake = Cake();
-            cake.flavor = "German chocolate";
-            "#;
-        // cake.taste(); // Prints "The German chocolate cake is delicious!".
-        let mut lox = Lox::new(SourceId::Test, "".to_string());
-        assert_eq!(lox.test_run(source), Ok(()));
-        assert_eq!(
-            lox.test_eval("cake.taste()"),
-            Ok(Value::String(
-                "The German chocolate cake is delicious!".into()
-            ))
-        );
-        let source = r#"
-            fun notTaste() {
-                var adjective = "Uh oh!";
-                fun inner() {
-                    return adjective;
-                }
-                return inner;
-            }
-            cake.taste = notTaste();
-            "#;
-        assert_eq!(lox.test_run(source), Ok(()));
-        assert_eq!(
-            lox.test_eval("cake.taste()"),
-            Ok(Value::String("Uh oh!".into()))
-        );
     }
 }

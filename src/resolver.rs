@@ -3,13 +3,15 @@ use std::collections::HashMap;
 use crate::error::Error;
 use crate::expr::Expr;
 use crate::scanner::Token;
-use crate::stmt::{Function, FunctionType, Stmt};
+use crate::stmt::{Function, Stmt};
 use crate::Lox;
 
 pub struct Resolver<'a> {
     lox: &'a mut Lox,
-    scopes: Vec<HashMap<String, Variable>>,
+    scopes: Vec<Scope>,
 }
+
+type Scope = HashMap<String, Variable>;
 
 #[derive(Debug, Clone, PartialEq)]
 struct Variable {
@@ -73,7 +75,7 @@ impl<'a> Resolver<'a> {
             Stmt::Function(fun) => {
                 self.declare(&fun.name);
                 self.define(&fun.name);
-                self.resolve_function(fun, FunctionType::Function);
+                self.resolve_function(fun);
             }
             Stmt::Return { value, .. } => {
                 if let Some(expr) = value {
@@ -83,9 +85,18 @@ impl<'a> Resolver<'a> {
             Stmt::Class { name, methods } => {
                 self.declare(name);
                 self.define(name);
+                let scope = self.begin_scope();
+                scope.insert(
+                    "this".to_string(),
+                    Variable {
+                        token: None,
+                        status: Status::Used,
+                    },
+                );
                 for method in methods {
-                    self.resolve_function(method, FunctionType::Method);
+                    self.resolve_function(method);
                 }
+                self.end_scope();
             }
         }
     }
@@ -147,17 +158,8 @@ impl<'a> Resolver<'a> {
         self.resolve_local(token);
     }
 
-    fn resolve_function(&mut self, fun: &Function, fun_type: FunctionType) {
+    fn resolve_function(&mut self, fun: &Function) {
         self.begin_scope();
-        if fun_type == FunctionType::Method {
-            self.scopes.last_mut().unwrap().insert(
-                "this".to_string(),
-                Variable {
-                    token: None,
-                    status: Status::Used,
-                },
-            );
-        }
         for param in &fun.params {
             self.declare(param);
             self.define(param);
@@ -194,8 +196,9 @@ impl<'a> Resolver<'a> {
         }
     }
 
-    fn begin_scope(&mut self) {
+    fn begin_scope(&mut self) -> &mut Scope {
         self.scopes.push(Default::default());
+        self.scopes.last_mut().unwrap()
     }
 
     fn end_scope(&mut self) {

@@ -8,40 +8,72 @@ use crate::{wrap, SharedRef};
 
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct Environment {
-    parent: Option<SharedRef<Environment>>,
+    parent: Option<EnvironmentRef>,
     values: HashMap<String, Value>,
 }
 
-/// Create a new local scope with the given scope as parent.
-pub fn new_block(current: SharedRef<Environment>) -> SharedRef<Environment> {
-    wrap(Environment::new(Some(current)))
-}
+#[derive(Debug, Clone, PartialEq)]
+pub struct EnvironmentRef(SharedRef<Environment>);
 
-/// Remove the current local scope and return the parent scope.
-pub fn remove_block(env: SharedRef<Environment>) -> SharedRef<Environment> {
-    env.borrow().parent.clone().expect("removed global scope")
-}
-
-fn ancestor(env: SharedRef<Environment>, depth: usize) -> SharedRef<Environment> {
-    let mut env = env;
-    for _ in 0..depth {
-        let parent = env.borrow().parent.as_ref().map(Rc::clone).unwrap();
-        env = parent;
+impl EnvironmentRef {
+    pub fn new() -> Self {
+        Self(wrap(Environment::default()))
     }
-    env
+
+    pub fn with_parent(parent: EnvironmentRef) -> Self {
+        Self(wrap(Environment {
+            parent: Some(parent),
+            ..Default::default()
+        }))
+    }
+
+    pub fn borrow(&self) -> std::cell::Ref<Environment> {
+        self.0.borrow()
+    }
+
+    pub fn borrow_mut(&self) -> std::cell::RefMut<Environment> {
+        self.0.borrow_mut()
+    }
+
+    pub fn get_at(&self, depth: usize, name: &Token) -> Value {
+        self.ancestor(depth)
+            .0
+            .borrow()
+            .try_get(name)
+            .expect("unresolved local")
+    }
+
+    pub fn assign_at(&self, depth: usize, name: &Token, value: &Value) {
+        self.ancestor(depth).0.borrow_mut().assign(name, value);
+    }
+
+    fn ancestor(&self, depth: usize) -> Self {
+        let mut env = Self(Rc::clone(&self.0));
+        for _ in 0..depth {
+            let parent = env
+                .0
+                .borrow()
+                .parent
+                .as_ref()
+                .map(|p| Rc::clone(&p.0))
+                .expect("too deep");
+            env = Self(parent);
+        }
+        env
+    }
 }
 
 impl Environment {
-    pub fn new(parent: Option<SharedRef<Environment>>) -> Self {
-        Self {
-            parent,
-            values: HashMap::new(),
-        }
-    }
-
     /// Define a new local variable in the current environment.
     pub fn define(&mut self, name: String, value: Value) {
         self.values.insert(name, value);
+    }
+
+    pub fn assign(&mut self, name: &Token, value: &Value) {
+        match self.values.get_mut(&name.lexeme) {
+            Some(v) => *v = value.clone(),
+            None => unreachable!(),
+        }
     }
 
     pub fn try_get(&self, name: &Token) -> Result<Value> {
@@ -49,45 +81,5 @@ impl Environment {
             .get(&name.lexeme)
             .cloned()
             .ok_or_else(|| Error::runtime_err(name, "Undefined variable."))
-    }
-
-    /// Get a local variable at the given depth.
-    pub fn get(&self, depth: usize, name: &Token) -> Value {
-        match depth {
-            0 => self
-                .values
-                .get(&name.lexeme)
-                .expect("resolver should catch undefined local")
-                .clone(),
-            _ => {
-                let env = ancestor(self.parent.as_ref().unwrap().clone(), depth - 1);
-                let value = env
-                    .borrow()
-                    .values
-                    .get(&name.lexeme)
-                    .expect("resolver should catch undefined local")
-                    .clone();
-                value
-            }
-        }
-    }
-
-    /// Assign a local variable at the given depth.
-    pub fn assign(&mut self, depth: usize, name: &Token, value: &Value) {
-        match depth {
-            0 => {
-                *self
-                    .values
-                    .get_mut(&name.lexeme)
-                    .expect("resolver should catch undefined local") = value.clone()
-            }
-            _ => {
-                let env = ancestor(self.parent.as_ref().unwrap().clone(), depth - 1);
-                *env.borrow_mut()
-                    .values
-                    .get_mut(&name.lexeme)
-                    .expect("resolver should catch undefined local") = value.clone();
-            }
-        }
     }
 }

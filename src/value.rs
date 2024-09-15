@@ -2,8 +2,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use crate::environment as env;
-use crate::environment::Environment;
+use crate::environment::EnvironmentRef;
 use crate::error::{Error, ErrorKind, Result};
 use crate::interpreter::Interpreter;
 use crate::scanner::{Token, TokenType};
@@ -31,8 +30,7 @@ pub enum Callable {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Function {
     pub declaration: stmt::Function,
-    pub closure: Option<SharedRef<Environment>>,
-    pub this: Option<SharedRef<ClassInstance>>,
+    closure: EnvironmentRef,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -68,28 +66,20 @@ impl Callable {
                 Ok(Value::Number(elapsed.as_millis() as f64 / 1000.0))
             }
             Callable::Function(fun) => {
-                interpreter.environment = env::new_block(interpreter.environment.clone());
-                if let Some(this) = &fun.this {
-                    interpreter
-                        .environment
-                        .borrow_mut()
-                        .define("this".to_string(), Value::ClassInstance(Rc::clone(this)));
-                }
+                let environment = EnvironmentRef::with_parent(fun.closure.clone());
                 assert_eq!(arguments.len(), fun.declaration.params.len());
                 for (i, value) in arguments.into_iter().enumerate() {
                     let name = fun.declaration.params[i].lexeme.clone();
-                    interpreter.environment.borrow_mut().define(name, value);
+                    environment.borrow_mut().define(name, value);
                 }
-                let result = match interpreter.execute_all(&fun.declaration.body) {
+                match interpreter.execute_block(&fun.declaration.body, environment) {
                     Ok(()) => Ok(Value::Nil),
                     Err(Error {
                         kind: ErrorKind::Return(value),
                         ..
                     }) => Ok(value),
                     Err(err) => Err(err),
-                };
-                interpreter.environment = env::remove_block(interpreter.environment.clone());
-                result
+                }
             }
             Callable::Class(class) => {
                 let inst = Value::ClassInstance(Rc::new(RefCell::new(ClassInstance::new(
@@ -110,11 +100,19 @@ impl Callable {
 }
 
 impl Function {
-    pub fn bind(self, instance: Rc<RefCell<ClassInstance>>) -> Self {
+    pub fn new(declaration: stmt::Function, closure: EnvironmentRef) -> Self {
         Self {
-            this: Some(instance),
-            ..self
+            declaration,
+            closure,
         }
+    }
+
+    pub fn bind(self, instance: Rc<RefCell<ClassInstance>>) -> Self {
+        let closure = EnvironmentRef::with_parent(self.closure);
+        closure
+            .borrow_mut()
+            .define("this".to_string(), Value::ClassInstance(instance));
+        Self { closure, ..self }
     }
 }
 
@@ -171,16 +169,6 @@ impl From<Class> for Value {
     }
 }
 
-impl From<stmt::Function> for Function {
-    fn from(fun: stmt::Function) -> Self {
-        Self {
-            declaration: fun,
-            closure: None,
-            this: None,
-        }
-    }
-}
-
 impl std::fmt::Display for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -220,5 +208,68 @@ mod tests {
         assert_eq!(res, Ok(()));
         assert_eq!(lox.test_eval("counter()"), Ok(Value::Number(1.0)));
         assert_eq!(lox.test_eval("counter()"), Ok(Value::Number(2.0)));
+    }
+
+    #[test]
+    fn test_method() {
+        let source = r#"
+            class Bacon {
+                eat() {
+                    return "Crunch crunch crunch!";
+                }
+            }
+            "#;
+        let mut lox = Lox::new(SourceId::Test, "".to_string());
+        assert_eq!(lox.test_run(source), Ok(()));
+        assert_eq!(
+            lox.test_eval("Bacon().eat()"),
+            Ok(Value::String("Crunch crunch crunch!".into()))
+        );
+    }
+
+    #[test]
+    fn test_bound_method() {
+        let source = r#"
+            class Cake {
+              taste() {
+                var adjective = "delicious";
+                return "The " + this.flavor + " cake is " + adjective + "!";
+              }
+            }
+
+            var cake = Cake();
+            cake.flavor = "German chocolate";
+            "#;
+        let mut lox = Lox::new(SourceId::Test, "".to_string());
+        assert_eq!(lox.test_run(source), Ok(()));
+        assert_eq!(
+            lox.test_eval("cake.taste()"),
+            Ok(Value::String(
+                "The German chocolate cake is delicious!".into()
+            ))
+        );
+    }
+
+    #[test]
+    fn test_method_complex() {
+        let source = r#"
+            class Thing {
+              getCallback() {
+                fun localFunction() {
+                  return this;
+                }
+
+                return localFunction;
+              }
+            }
+
+            var callback = Thing().getCallback();
+            "#;
+        let mut lox = Lox::new(SourceId::Test, "".to_string());
+        assert_eq!(lox.test_run(source), Ok(()));
+        assert!(matches!(
+            lox.test_eval("callback()"),
+            Ok(Value::ClassInstance(..))
+        ));
     }
 }
