@@ -289,16 +289,8 @@ mod tests {
 
     fn all_tokens(source: &str) -> Vec<Token> {
         let source = source.to_string();
-        let mut lox = Lox::new(SourceId::Prompt, source);
-        let mut scanner = Scanner::new(&mut lox);
-        let mut tokens = Vec::new();
-        let mut is_eof = false;
-        while !is_eof {
-            let t = scanner.next_token();
-            is_eof = t.is_eof();
-            tokens.push(t);
-        }
-        tokens
+        let mut lox = Lox::new(SourceId::Test, source);
+        lox.scan()
     }
 
     fn first_token(source: &str) -> Token {

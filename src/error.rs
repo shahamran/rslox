@@ -3,7 +3,7 @@ use std::io;
 use annotate_snippets::{Level, Renderer, Snippet};
 
 use crate::scanner::Token;
-use crate::types::Literal;
+use crate::value::Value;
 use crate::Lox;
 
 pub type Result<T> = core::result::Result<T, Error>;
@@ -21,7 +21,7 @@ pub enum ErrorKind {
     IoError,
     SyntaxError,
     RuntimeError,
-    Return(Literal),
+    Return(Value),
 }
 
 impl Error {
@@ -49,7 +49,7 @@ impl Error {
         }
     }
 
-    pub fn return_value(value: Literal) -> Self {
+    pub fn return_value(value: Value) -> Self {
         Self {
             kind: ErrorKind::Return(value),
             token: None,

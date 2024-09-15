@@ -1,16 +1,19 @@
 // mod ast_printer;
 mod environment;
 mod error;
+mod expr;
 mod interpreter;
 mod parser;
 mod resolver;
 mod scanner;
-mod types;
+mod stmt;
+mod value;
 
+use std::cell::RefCell;
 use std::env;
-use std::io;
-use std::io::Write;
+use std::io::{self, Write};
 use std::process;
+use std::rc::Rc;
 
 use error::{Error, Result};
 use interpreter::Interpreter;
@@ -36,7 +39,7 @@ fn main() {
 fn run_file(path: String) -> Result<()> {
     let content = std::fs::read_to_string(&path)?;
     let mut lox = Lox::new(SourceId::File(path), content);
-    run(&mut lox);
+    lox.run();
     match lox.error {
         Some(e) => Err(e),
         None => Ok(()),
@@ -54,24 +57,10 @@ fn run_prompt() -> Result<()> {
         if num_read == 0 {
             break;
         }
-        run(&mut lox);
+        lox.run();
     }
     println!();
     Ok(())
-}
-
-fn run(lox: &mut Lox) {
-    let stmts = lox.parser().parse();
-    Resolver::new(lox).resolve(&stmts);
-    if lox.error.is_some() {
-        return;
-    }
-    for stmt in stmts {
-        if let Err(e) = lox.interpreter.execute(&stmt) {
-            lox.report(e);
-            break;
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -100,6 +89,20 @@ impl Lox {
         }
     }
 
+    fn run(&mut self) {
+        let stmts = self.parser().parse();
+        Resolver::new(self).resolve(&stmts);
+        if self.error.is_some() {
+            return;
+        }
+        for stmt in stmts {
+            if let Err(e) = self.interpreter.execute(&stmt) {
+                self.report(e);
+                break;
+            }
+        }
+    }
+
     fn set_context(&mut self, src_id: SourceId, source: String) {
         self.src_id = src_id;
         self.source = source;
@@ -118,6 +121,23 @@ impl Lox {
         let tokens = self.scan();
         parser::Parser::new(self, tokens)
     }
+
+    #[cfg(test)]
+    fn test_eval(&mut self, source: &str) -> Result<value::Value> {
+        self.set_context(SourceId::Test, source.to_string());
+        let expr = self.parser().expression()?;
+        self.interpreter.evaluate(&expr)
+    }
+
+    #[cfg(test)]
+    fn test_run(&mut self, source: &str) -> Result<()> {
+        self.set_context(SourceId::Test, source.to_string());
+        self.run();
+        match &self.error {
+            Some(e) => Err(e.clone()),
+            None => Ok(()),
+        }
+    }
 }
 
 impl AsRef<str> for SourceId {
@@ -129,4 +149,10 @@ impl AsRef<str> for SourceId {
             SourceId::Test => "<test>",
         }
     }
+}
+
+type SharedRef<T> = Rc<RefCell<T>>;
+
+fn wrap<T>(t: T) -> SharedRef<T> {
+    Rc::new(RefCell::new(t))
 }

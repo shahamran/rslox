@@ -1,15 +1,20 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use crate::environment::Environment;
 use crate::error::{Error, Result};
-use crate::parser::{Expr, Function, Stmt};
+use crate::expr::Expr;
 use crate::scanner::{Token, TokenType};
-use crate::types::{Callable, Class, Literal};
+use crate::stmt::{self, Stmt};
+use crate::value::{self, Value};
+use crate::SharedRef;
+use crate::{environment as env, wrap};
+
+pub type EnvironmentRef = SharedRef<env::Environment>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Interpreter {
-    pub environment: Environment,
+    pub environment: EnvironmentRef,
+    globals: EnvironmentRef,
     locals: HashMap<Token, usize>,
 }
 
@@ -19,10 +24,10 @@ impl Interpreter {
             Stmt::Var { name, initializer } => {
                 let value = match initializer {
                     Some(expr) => self.evaluate(expr)?,
-                    None => Literal::Undefined,
+                    None => Value::Undefined,
                 };
                 let name = name.lexeme.clone();
-                self.environment.define(name, value);
+                self.environment.borrow_mut().define(name, value);
             }
             Stmt::Expression(expr) => self.evaluate(expr).map(|_| ())?,
             Stmt::Print(expr) | Stmt::ReplExpression(expr) => {
@@ -50,7 +55,7 @@ impl Interpreter {
             Stmt::Return { value, .. } => {
                 let value = match value {
                     Some(expr) => self.evaluate(expr)?,
-                    None => Literal::Nil,
+                    None => Value::Nil,
                 };
                 return Err(Error::return_value(value));
             }
@@ -59,14 +64,14 @@ impl Interpreter {
         Ok(())
     }
 
-    pub fn evaluate(&mut self, expr: &Expr) -> Result<Literal> {
+    pub fn evaluate(&mut self, expr: &Expr) -> Result<Value> {
         match expr {
             Expr::Literal(t) => Ok(t.clone()),
             Expr::Logical { left, op, right } => self.eval_logical(left, op, right),
             Expr::Unary { op, expr } => self.eval_unary(op, expr),
             Expr::Binary { left, op, right } => self.eval_binary(left, op, right),
             Expr::Grouping(expr) => self.evaluate(expr),
-            Expr::Variable(name) => self.look_up_variable(name).cloned(),
+            Expr::Variable(name) => self.look_up_variable(name),
             Expr::Assign { name, value } => self.eval_assignment(name, value),
             expr @ Expr::Call { .. } => self.eval_call(expr),
             Expr::Get { object, name } => self.eval_get(object, name),
@@ -75,14 +80,14 @@ impl Interpreter {
                 name,
                 value,
             } => self.eval_set(object, name, value),
-            Expr::This(keyword) => self.look_up_variable(keyword).cloned(),
+            Expr::This(keyword) => self.look_up_variable(keyword),
         }
     }
 
     fn execute_block(&mut self, statements: &[Stmt]) -> Result<()> {
-        self.environment.new_block();
+        self.environment = env::new_block(self.environment.clone());
         let result = self.execute_all(statements);
-        self.environment.remove_block();
+        self.environment = env::remove_block(self.environment.clone());
         result
     }
 
@@ -93,19 +98,19 @@ impl Interpreter {
         Ok(())
     }
 
-    fn eval_unary(&mut self, op: &Token, expr: &Expr) -> Result<Literal> {
+    fn eval_unary(&mut self, op: &Token, expr: &Expr) -> Result<Value> {
         let right = self.evaluate(expr)?;
         match op.token_type {
             TokenType::Minus => match right {
-                Literal::Number(n) => Ok(Literal::Number(-n)),
+                Value::Number(n) => Ok(Value::Number(-n)),
                 _ => Err(Error::runtime_err(op, "Operand must be a number.")),
             },
-            TokenType::Bang => Ok(Literal::Boolean(!is_truthy(&right))),
+            TokenType::Bang => Ok(Value::Boolean(!is_truthy(&right))),
             _ => unreachable!("unary expr parsing error"),
         }
     }
 
-    fn eval_logical(&mut self, left: &Expr, op: &Token, right: &Expr) -> Result<Literal> {
+    fn eval_logical(&mut self, left: &Expr, op: &Token, right: &Expr) -> Result<Value> {
         let left = self.evaluate(left)?;
         match (op.token_type, is_truthy(&left)) {
             (TokenType::Or, true) => Ok(left),
@@ -114,7 +119,7 @@ impl Interpreter {
         }
     }
 
-    fn eval_binary(&mut self, left: &Expr, op: &Token, right: &Expr) -> Result<Literal> {
+    fn eval_binary(&mut self, left: &Expr, op: &Token, right: &Expr) -> Result<Value> {
         let left = self.evaluate(left)?;
         let right = self.evaluate(right)?;
         let num_operands = || Error::runtime_err(op, "Operands must be numbers.");
@@ -123,8 +128,8 @@ impl Interpreter {
             TokenType::Slash => num_op(|a, b| a / b, left, right).ok_or_else(num_operands),
             TokenType::Star => num_op(|a, b| a * b, left, right).ok_or_else(num_operands),
             TokenType::Plus => match (left, right) {
-                (Literal::Number(n1), Literal::Number(n2)) => Ok(Literal::Number(n1 + n2)),
-                (Literal::String(s1), Literal::String(s2)) => Ok(Literal::String(s1 + &s2)),
+                (Value::Number(n1), Value::Number(n2)) => Ok(Value::Number(n1 + n2)),
+                (Value::String(s1), Value::String(s2)) => Ok(Value::String(s1 + &s2)),
                 _ => Err(Error::runtime_err(
                     op,
                     "Operands must both be numbers or strings.",
@@ -134,24 +139,26 @@ impl Interpreter {
             TokenType::GreaterEqual => num_cmp(|a, b| a >= b, left, right).ok_or_else(num_operands),
             TokenType::Less => num_cmp(|a, b| a < b, left, right).ok_or_else(num_operands),
             TokenType::LessEqual => num_cmp(|a, b| a <= b, left, right).ok_or_else(num_operands),
-            TokenType::EqualEqual => Ok(Literal::Boolean(left == right)),
-            TokenType::BangEqual => Ok(Literal::Boolean(left != right)),
+            TokenType::EqualEqual => Ok(Value::Boolean(left == right)),
+            TokenType::BangEqual => Ok(Value::Boolean(left != right)),
             _ => unreachable!("binary expr parsing error"),
         }
     }
 
-    fn eval_assignment(&mut self, name: &Token, value: &Expr) -> Result<Literal> {
+    fn eval_assignment(&mut self, name: &Token, value: &Expr) -> Result<Value> {
         let value = self.evaluate(value)?;
-        self.environment
-            .assign(self.locals.get(name).copied(), name, &value)?;
+        match self.locals.get(name) {
+            Some(&distance) => self.environment.borrow_mut().assign(distance, name, &value),
+            None => self.globals.borrow_mut().assign(0, name, &value),
+        }
         Ok(value)
     }
 
-    fn eval_get(&mut self, object: &Expr, name: &Token) -> Result<Literal> {
+    fn eval_get(&mut self, object: &Expr, name: &Token) -> Result<Value> {
         match self.evaluate(object)? {
-            Literal::ClassInstance(inst) => match inst.borrow().get(name)? {
-                Literal::Callable(f @ Callable::Function { .. }) => {
-                    Ok(f.bind(Rc::clone(&inst)).into())
+            Value::ClassInstance(inst) => match inst.borrow().get(name)? {
+                Value::Callable(value::Callable::Function(fun)) => {
+                    Ok(fun.bind(Rc::clone(&inst)).into())
                 }
                 lit => Ok(lit),
             },
@@ -159,9 +166,9 @@ impl Interpreter {
         }
     }
 
-    fn eval_set(&mut self, object: &Expr, name: &Token, value: &Expr) -> Result<Literal> {
+    fn eval_set(&mut self, object: &Expr, name: &Token, value: &Expr) -> Result<Value> {
         let inst = match self.evaluate(object)? {
-            Literal::ClassInstance(inst) => inst,
+            Value::ClassInstance(inst) => inst,
             _ => return Err(Error::runtime_err(name, "Only instances have fields.")),
         };
         let value = self.evaluate(value)?;
@@ -171,7 +178,7 @@ impl Interpreter {
         Ok(value)
     }
 
-    fn eval_call(&mut self, expr: &Expr) -> Result<Literal> {
+    fn eval_call(&mut self, expr: &Expr) -> Result<Value> {
         let Expr::Call {
             callee,
             closing_paren,
@@ -186,7 +193,7 @@ impl Interpreter {
             args.push(self.evaluate(arg)?);
         }
         match callee {
-            Literal::Callable(mut f) => {
+            Value::Callable(mut f) => {
                 if f.arity() == args.len() {
                     dbg!(&self.locals);
                     f.call(self, args)
@@ -204,25 +211,31 @@ impl Interpreter {
         }
     }
 
-    fn eval_function_decl(&mut self, fun: &Function) -> Result<()> {
-        self.environment
-            .define(fun.name.lexeme.clone(), fun.clone().into());
+    fn eval_function_decl(&mut self, fun: &stmt::Function) -> Result<()> {
+        let name = fun.name.lexeme.clone();
+        let fun = value::Function {
+            declaration: fun.clone(),
+            closure: Some(Rc::clone(&self.environment)),
+            this: None,
+        };
+        self.environment.borrow_mut().define(name, fun.into());
         Ok(())
     }
 
-    fn eval_class_decl(&mut self, name: &Token, methods: &[Function]) -> Result<()> {
+    fn eval_class_decl(&mut self, name: &Token, methods: &[stmt::Function]) -> Result<()> {
         let class_name = name.lexeme.clone();
         self.environment
-            .define(class_name.clone(), Literal::Undefined);
+            .borrow_mut()
+            .define(class_name.clone(), Value::Undefined);
         let methods = methods
             .iter()
-            .map(|f| (f.name.lexeme.clone(), f.clone()))
+            .map(|f| (f.name.lexeme.clone(), value::Function::from(f.clone())))
             .collect();
-        let class = Class {
+        let class = value::Class {
             name: class_name,
             methods,
         };
-        self.environment.assign(Some(0), name, &class.into())?;
+        self.environment.borrow_mut().assign(0, name, &class.into());
         Ok(())
     }
 
@@ -230,49 +243,100 @@ impl Interpreter {
         self.locals.insert(variable.clone(), depth);
     }
 
-    fn look_up_variable(&self, variable: &Token) -> Result<&Literal> {
-        self.environment
-            .get(self.locals.get(variable).copied(), variable)
+    fn look_up_variable(&self, variable: &Token) -> Result<Value> {
+        match self.locals.get(variable) {
+            Some(&depth) => Ok(self.environment.borrow().get(depth, variable)),
+            None => self.globals.borrow().try_get(variable),
+        }
     }
 }
 
-fn num_op<F>(op: F, left: Literal, right: Literal) -> Option<Literal>
+fn num_op<F>(op: F, left: Value, right: Value) -> Option<Value>
 where
     F: FnOnce(f64, f64) -> f64,
 {
-    use Literal::Number;
+    use Value::Number;
     match (left, right) {
         (Number(left), Number(right)) => Some(Number(op(left, right))),
         _ => None,
     }
 }
 
-fn num_cmp<F>(op: F, left: Literal, right: Literal) -> Option<Literal>
+fn num_cmp<F>(op: F, left: Value, right: Value) -> Option<Value>
 where
     F: FnOnce(f64, f64) -> bool,
 {
-    use Literal::{Boolean, Number};
+    use Value::{Boolean, Number};
     match (left, right) {
         (Number(left), Number(right)) => Some(Boolean(op(left, right))),
         _ => None,
     }
 }
 
-const fn is_truthy(literal: &Literal) -> bool {
+const fn is_truthy(literal: &Value) -> bool {
     match literal {
-        Literal::Boolean(b) => *b,
-        Literal::Nil => false,
+        Value::Boolean(b) => *b,
+        Value::Nil => false,
         _ => true,
     }
 }
 
 impl Default for Interpreter {
     fn default() -> Self {
-        let mut environment = Environment::default();
-        environment.define("clock".to_string(), Callable::Clock.into());
+        let mut environment = env::Environment::new(None);
+        environment.define("clock".to_string(), value::Callable::Clock.into());
+        let environment: EnvironmentRef = wrap(environment);
+        let globals = environment.clone();
         Self {
             environment,
+            globals,
             locals: Default::default(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{Lox, SourceId};
+
+    use super::*;
+
+    #[test]
+    fn test_class() {
+        let source = r#"
+            class Cake {
+              taste() {
+                var adjective = "delicious";
+                return "The " + this.flavor + " cake is " + adjective + "!";
+              }
+            }
+
+            var cake = Cake();
+            cake.flavor = "German chocolate";
+            "#;
+        // cake.taste(); // Prints "The German chocolate cake is delicious!".
+        let mut lox = Lox::new(SourceId::Test, "".to_string());
+        assert_eq!(lox.test_run(source), Ok(()));
+        assert_eq!(
+            lox.test_eval("cake.taste()"),
+            Ok(Value::String(
+                "The German chocolate cake is delicious!".into()
+            ))
+        );
+        let source = r#"
+            fun notTaste() {
+                var adjective = "Uh oh!";
+                fun inner() {
+                    return adjective;
+                }
+                return inner;
+            }
+            cake.taste = notTaste();
+            "#;
+        assert_eq!(lox.test_run(source), Ok(()));
+        assert_eq!(
+            lox.test_eval("cake.taste()"),
+            Ok(Value::String("Uh oh!".into()))
+        );
     }
 }

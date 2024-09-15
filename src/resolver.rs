@@ -1,8 +1,9 @@
 use std::collections::HashMap;
 
 use crate::error::Error;
-use crate::parser::{Expr, Function, FunctionType, Stmt};
+use crate::expr::Expr;
 use crate::scanner::Token;
+use crate::stmt::{Function, FunctionType, Stmt};
 use crate::Lox;
 
 pub struct Resolver<'a> {
