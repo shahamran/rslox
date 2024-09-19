@@ -33,6 +33,7 @@ pub enum Stmt {
     Class {
         name: Token,
         methods: Vec<Function>,
+        superclass: Option<Expr>,
     },
 }
 
@@ -83,6 +84,13 @@ impl Parser<'_> {
         let name = self
             .consume(TokenType::Identifier, "Expected class name.")?
             .clone();
+        let mut superclass = None;
+        if self.matches(&[TokenType::Less]) {
+            superclass = Some(Expr::Variable(
+                self.consume(TokenType::Identifier, "Expected superclass name.")?
+                    .clone(),
+            ));
+        }
         self.consume(TokenType::LeftBrace, "Expected '{' before class body.")?;
         let mut methods = Vec::new();
         while !self.check(&TokenType::RightBrace) && !self.is_eof() {
@@ -92,7 +100,11 @@ impl Parser<'_> {
             }
         }
         self.consume(TokenType::RightBrace, "Expected '}' after class body.")?;
-        Ok(Stmt::Class { name, methods })
+        Ok(Stmt::Class {
+            name,
+            methods,
+            superclass,
+        })
     }
 
     fn function(&mut self, mut kind: FunctionType) -> Result<Stmt> {

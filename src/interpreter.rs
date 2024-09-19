@@ -6,7 +6,7 @@ use crate::error::{Error, Result};
 use crate::expr::Expr;
 use crate::scanner::{Token, TokenType};
 use crate::stmt::{self, Stmt};
-use crate::value::{self, Value};
+use crate::value::{self, Callable, Value};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Interpreter {
@@ -59,7 +59,11 @@ impl Interpreter {
                 };
                 return Err(Error::return_value(value));
             }
-            Stmt::Class { name, methods } => self.eval_class_decl(name, methods)?,
+            Stmt::Class {
+                name,
+                methods,
+                superclass,
+            } => self.eval_class_decl(name, methods, superclass.as_ref())?,
         }
         Ok(())
     }
@@ -222,7 +226,20 @@ impl Interpreter {
         Ok(())
     }
 
-    fn eval_class_decl(&mut self, name: &Token, methods: &[stmt::Function]) -> Result<()> {
+    fn eval_class_decl(
+        &mut self,
+        name: &Token,
+        methods: &[stmt::Function],
+        superclass: Option<&Expr>,
+    ) -> Result<()> {
+        let superclass = match superclass {
+            Some(expr @ Expr::Variable(t)) => match self.evaluate(expr)? {
+                v @ Value::Callable(Callable::Class(_)) => Some(v),
+                _ => return Err(Error::runtime_err(t, "Superclass must be a class.")),
+            },
+            None => None,
+            _ => unreachable!(),
+        };
         let class_name = name.lexeme.clone();
         self.environment
             .borrow_mut()
@@ -239,6 +256,7 @@ impl Interpreter {
         let class = value::Class {
             name: class_name,
             methods,
+            superclass,
         };
         self.environment.borrow_mut().assign(name, &class.into());
         Ok(())

@@ -37,6 +37,7 @@ pub struct Function {
 pub struct Class {
     pub name: String,
     pub methods: HashMap<String, Function>,
+    pub superclass: Option<Value>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -141,10 +142,18 @@ impl ClassInstance {
 
     pub fn get(&self, name: &Token) -> Result<Value> {
         let prop_name = &name.lexeme;
+        let find_in_super = || -> Option<Function> {
+            match self.class.superclass.as_ref()? {
+                Value::Callable(Callable::Class(cls)) => cls.methods.get(prop_name).cloned(),
+                _ => unreachable!(),
+            }
+        };
         if let Some(lit) = self.fields.get(prop_name).cloned() {
             Ok(lit)
         } else if let Some(method) = self.class.methods.get(prop_name) {
             Ok(method.clone().into())
+        } else if let Some(method) = find_in_super() {
+            Ok(method.into())
         } else {
             Err(Error::runtime_err(
                 name,

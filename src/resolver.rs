@@ -96,9 +96,20 @@ impl<'a> Resolver<'a> {
                     self.resolve_expr(expr);
                 }
             }
-            Stmt::Class { name, methods } => {
+            Stmt::Class {
+                name,
+                methods,
+                superclass,
+            } => {
                 self.declare(name);
                 self.define(name);
+                if let Some(expr @ Expr::Variable(t)) = superclass {
+                    if t.lexeme == name.lexeme {
+                        self.lox
+                            .report(Error::syntax_err(t, "A class can't inherit from itself."));
+                    }
+                    self.resolve_expr(expr);
+                }
                 let scope = self.begin_scope();
                 scope.insert(
                     "this".to_string(),
