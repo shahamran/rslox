@@ -3,12 +3,13 @@ use std::collections::HashMap;
 use crate::error::Error;
 use crate::expr::Expr;
 use crate::scanner::Token;
-use crate::stmt::{Function, Stmt};
+use crate::stmt::{Function, FunctionType, Stmt};
 use crate::Lox;
 
 pub struct Resolver<'a> {
     lox: &'a mut Lox,
     scopes: Vec<Scope>,
+    current_function: Option<FunctionType>,
 }
 
 type Scope = HashMap<String, Variable>;
@@ -31,6 +32,7 @@ impl<'a> Resolver<'a> {
         Self {
             lox,
             scopes: Default::default(),
+            current_function: None,
         }
     }
 
@@ -77,8 +79,20 @@ impl<'a> Resolver<'a> {
                 self.define(&fun.name);
                 self.resolve_function(fun);
             }
-            Stmt::Return { value, .. } => {
+            Stmt::Return { keyword, value } => {
+                if self.current_function.is_none() {
+                    self.lox.report(Error::syntax_err(
+                        keyword,
+                        "Can't return from top-level code.",
+                    ));
+                }
                 if let Some(expr) = value {
+                    if self.current_function == Some(FunctionType::Initializer) {
+                        self.lox.report(Error::syntax_err(
+                            keyword,
+                            "Can't return a value from an initializer.",
+                        ));
+                    }
                     self.resolve_expr(expr);
                 }
             }
@@ -159,6 +173,8 @@ impl<'a> Resolver<'a> {
     }
 
     fn resolve_function(&mut self, fun: &Function) {
+        let previous_function = self.current_function;
+        self.current_function = Some(fun.kind);
         self.begin_scope();
         for param in &fun.params {
             self.declare(param);
@@ -166,6 +182,7 @@ impl<'a> Resolver<'a> {
         }
         self.resolve(&fun.body);
         self.end_scope();
+        self.current_function = previous_function;
     }
 
     fn declare(&mut self, name: &Token) {

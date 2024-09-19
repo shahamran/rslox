@@ -72,20 +72,34 @@ impl Callable {
                     let name = fun.declaration.params[i].lexeme.clone();
                     environment.borrow_mut().define(name, value);
                 }
+                let fun_kind = fun.declaration.kind;
+                let get_this = || {
+                    fun.closure
+                        .get_by_name("this")
+                        .expect("initializer without 'this' local.")
+                };
                 match interpreter.execute_block(&fun.declaration.body, environment) {
-                    Ok(()) => Ok(Value::Nil),
+                    Ok(()) => match fun_kind {
+                        stmt::FunctionType::Initializer => Ok(get_this()),
+                        _ => Ok(Value::Nil),
+                    },
                     Err(Error {
                         kind: ErrorKind::Return(value),
                         ..
-                    }) => Ok(value),
+                    }) => match fun_kind {
+                        stmt::FunctionType::Initializer => Ok(get_this()),
+                        _ => Ok(value),
+                    },
                     Err(err) => Err(err),
                 }
             }
             Callable::Class(class) => {
-                let inst = Value::ClassInstance(Rc::new(RefCell::new(ClassInstance::new(
-                    Rc::clone(class),
-                ))));
-                Ok(inst)
+                let inst = Rc::new(RefCell::new(ClassInstance::new(Rc::clone(class))));
+                if let Some(initializer) = class.methods.get("init") {
+                    Callable::Function(initializer.clone().bind(Rc::clone(&inst)))
+                        .call(interpreter, arguments)?;
+                }
+                Ok(Value::ClassInstance(Rc::clone(&inst)))
             }
         }
     }
@@ -94,7 +108,10 @@ impl Callable {
         match self {
             Callable::Clock => 0,
             Callable::Function(fun) => fun.declaration.params.len(),
-            Callable::Class { .. } => 0,
+            Callable::Class(cls) => match cls.methods.get("init") {
+                Some(init) => init.declaration.params.len(),
+                None => 0,
+            },
         }
     }
 }

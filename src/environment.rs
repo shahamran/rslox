@@ -43,6 +43,10 @@ impl EnvironmentRef {
             .expect("unresolved local")
     }
 
+    pub fn get_by_name(&self, name: &str) -> Option<Value> {
+        self.0.borrow().values.get(name).cloned()
+    }
+
     pub fn assign_at(&self, depth: usize, name: &Token, value: &Value) {
         self.ancestor(depth).0.borrow_mut().assign(name, value);
     }

@@ -41,12 +41,14 @@ pub struct Function {
     pub name: Token,
     pub params: Vec<Token>,
     pub body: Vec<Stmt>,
+    pub kind: FunctionType,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum FunctionType {
     Function,
     Method,
+    Initializer,
 }
 
 /// Statements parsing.
@@ -93,10 +95,13 @@ impl Parser<'_> {
         Ok(Stmt::Class { name, methods })
     }
 
-    fn function(&mut self, kind: FunctionType) -> Result<Stmt> {
+    fn function(&mut self, mut kind: FunctionType) -> Result<Stmt> {
         let name = self
             .consume(TokenType::Identifier, &format!("Expected {kind} name."))?
             .clone();
+        if &name.lexeme == "init" && kind == FunctionType::Method {
+            kind = FunctionType::Initializer;
+        }
         self.consume(
             TokenType::LeftParen,
             &format!("Expected '(' after {kind} name."),
@@ -125,7 +130,12 @@ impl Parser<'_> {
             &format!("Expected '{{' before {kind} body."),
         )?;
         let body = self.block()?;
-        Ok(Stmt::Function(Function { name, params, body }))
+        Ok(Stmt::Function(Function {
+            name,
+            params,
+            body,
+            kind,
+        }))
     }
 
     fn var_declaration(&mut self) -> Result<Stmt> {
@@ -258,6 +268,7 @@ impl fmt::Display for FunctionType {
         match self {
             FunctionType::Function => write!(f, "function"),
             FunctionType::Method => write!(f, "method"),
+            FunctionType::Initializer => write!(f, "initializer"),
         }
     }
 }
