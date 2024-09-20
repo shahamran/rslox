@@ -110,6 +110,16 @@ impl<'a> Resolver<'a> {
                     }
                     self.resolve_expr(expr);
                 }
+                if superclass.is_some() {
+                    let scope = self.begin_scope();
+                    scope.insert(
+                        "super".to_string(),
+                        Variable {
+                            token: None,
+                            status: Status::Used,
+                        },
+                    );
+                }
                 let scope = self.begin_scope();
                 scope.insert(
                     "this".to_string(),
@@ -122,6 +132,9 @@ impl<'a> Resolver<'a> {
                     self.resolve_function(method);
                 }
                 self.end_scope();
+                if superclass.is_some() {
+                    self.end_scope();
+                }
             }
         }
     }
@@ -153,6 +166,7 @@ impl<'a> Resolver<'a> {
                 self.resolve_expr(value)
             }
             Expr::This(keyword) => self.resolve_local(keyword),
+            Expr::Super { keyword, .. } => self.resolve_local(keyword),
         }
     }
 

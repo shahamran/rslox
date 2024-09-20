@@ -40,6 +40,10 @@ pub enum Expr {
         name: Token,
         value: Box<Expr>,
     },
+    Super {
+        keyword: Token,
+        method: Token,
+    },
     This(Token),
 }
 
@@ -225,6 +229,14 @@ impl Parser<'_> {
                 Expr::Grouping(Box::new(expr))
             }
             This => Expr::This(self.previous().clone()),
+            Super => {
+                let keyword = self.previous().clone();
+                self.consume(TokenType::Dot, "Expeted '.' after 'super'.")?;
+                let method = self
+                    .consume(TokenType::Identifier, "Expected superclass method name.")?
+                    .clone();
+                Expr::Super { keyword, method }
+            }
             Identifier => Expr::Variable(self.previous().clone()),
             _ => {
                 return Err(Error::syntax_err(self.previous(), "Expected expression."));

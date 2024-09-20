@@ -27,6 +27,14 @@ impl EnvironmentRef {
         }))
     }
 
+    pub fn parent(&self) -> Option<Self> {
+        self.0
+            .borrow()
+            .parent
+            .as_ref()
+            .map(|p| Self(Rc::clone(&p.0)))
+    }
+
     pub fn borrow(&self) -> std::cell::Ref<Environment> {
         self.0.borrow()
     }

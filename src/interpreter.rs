@@ -85,6 +85,7 @@ impl Interpreter {
                 value,
             } => self.eval_set(object, name, value),
             Expr::This(keyword) => self.look_up_variable(keyword),
+            Expr::Super { keyword, method } => self.eval_super(keyword, method),
         }
     }
 
@@ -244,6 +245,12 @@ impl Interpreter {
         self.environment
             .borrow_mut()
             .define(class_name.clone(), Value::Undefined);
+        if let Some(cls) = &superclass {
+            self.environment = EnvironmentRef::with_parent(self.environment.clone());
+            self.environment
+                .borrow_mut()
+                .define("super".to_string(), cls.clone());
+        }
         let methods = methods
             .iter()
             .map(|f| {
@@ -258,8 +265,35 @@ impl Interpreter {
             methods,
             superclass,
         };
+        if class.superclass.is_some() {
+            self.environment = self.environment.parent().unwrap();
+        }
         self.environment.borrow_mut().assign(name, &class.into());
         Ok(())
+    }
+
+    fn eval_super(&mut self, keyword: &Token, method: &Token) -> Result<Value> {
+        let &depth = self.locals.get(keyword).unwrap();
+        let Value::Callable(Callable::Class(superclass)) = self.environment.get_at(depth, keyword)
+        else {
+            unreachable!()
+        };
+        let Value::ClassInstance(instance) = self.environment.get_at(
+            depth - 1,
+            &Token {
+                lexeme: "this".to_string(),
+                ..keyword.clone()
+            },
+        ) else {
+            unreachable!()
+        };
+        Ok(superclass
+            .methods
+            .get(method.lexeme.as_str())
+            .ok_or_else(|| Error::runtime_err(method, "Undefined property."))?
+            .clone()
+            .bind(instance)
+            .into())
     }
 
     pub(crate) fn resolve(&mut self, variable: &Token, depth: usize) {
@@ -316,5 +350,38 @@ impl Default for Interpreter {
             globals,
             locals: Default::default(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{Lox, SourceId};
+
+    use super::*;
+
+    #[test]
+    fn test_super() {
+        let source = r#"
+            class A {
+                method() {
+                    return "A method";
+                }
+            }
+            class B < A {
+                method() {
+                    return "B method";
+                }
+                test() {
+                    return super.method();
+                }
+            }
+            class C < B {}
+            "#;
+        let mut lox = Lox::new(SourceId::Test, "".to_string());
+        assert_eq!(lox.test_run(source), Ok(()));
+        assert_eq!(
+            lox.test_eval("C().test()"),
+            Ok(Value::String("A method".to_string()))
+        );
     }
 }
