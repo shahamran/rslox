@@ -265,6 +265,15 @@ mod tests {
     use crate::{Lox, SourceId};
 
     #[test]
+    fn test_inheritance() {
+        let mut lox = Lox::new(SourceId::Test, "".to_string());
+        assert_eq!(
+            &lox.test_run("class Oops < Oops {}").unwrap_err().message,
+            "A class can't inherit from itself."
+        );
+    }
+
+    #[test]
     fn test_undefined_global() {
         let mut lox = Lox::new(SourceId::Test, "print a;".into());
         let stmts = lox.parser().parse();

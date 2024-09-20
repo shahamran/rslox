@@ -360,6 +360,33 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_inheritance() {
+        let mut lox = Lox::new(SourceId::Test, "".to_string());
+        let source = r#"
+            var NotAClass = "I am totally not a class.";
+            class Subclass < NotAClass {} // ?1
+            "#;
+        assert_eq!(
+            &lox.test_run(source).unwrap_err().message,
+            "Superclass must be a class."
+        );
+
+        let source = r#"
+            class Doughnut {
+                cook() {
+                    return "Fry until golden brown.";
+                }
+            }
+            class BostonCream < Doughnut {}
+            "#;
+        assert_eq!(lox.test_run(source), Ok(()));
+        assert_eq!(
+            lox.test_eval("BostonCream().cook()"),
+            Ok(Value::String("Fry until golden brown.".to_string()))
+        );
+    }
+
+    #[test]
     fn test_super() {
         let source = r#"
             class A {
@@ -383,5 +410,14 @@ mod tests {
             lox.test_eval("C().test()"),
             Ok(Value::String("A method".to_string()))
         );
+        let source = r#"
+            class C < B {
+                test() {
+                    return super.no_such_method();
+                }
+            }
+            "#;
+        assert_eq!(lox.test_run(source), Ok(()));
+        assert!(lox.test_eval("C().test()").is_err());
     }
 }
