@@ -10,6 +10,7 @@ pub struct Resolver<'a> {
     lox: &'a mut Lox,
     scopes: Vec<Scope>,
     current_function: Option<FunctionType>,
+    current_class: ClassType,
 }
 
 type Scope = HashMap<String, Variable>;
@@ -27,12 +28,20 @@ enum Status {
     Used,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum ClassType {
+    None,
+    Class,
+    Subclass,
+}
+
 impl<'a> Resolver<'a> {
     pub fn new(lox: &'a mut Lox) -> Self {
         Self {
             lox,
             scopes: Default::default(),
             current_function: None,
+            current_class: ClassType::None,
         }
     }
 
@@ -100,42 +109,7 @@ impl<'a> Resolver<'a> {
                 name,
                 methods,
                 superclass,
-            } => {
-                self.declare(name);
-                self.define(name);
-                if let Some(expr @ Expr::Variable(t)) = superclass {
-                    if t.lexeme == name.lexeme {
-                        self.lox
-                            .report(Error::syntax_err(t, "A class can't inherit from itself."));
-                    }
-                    self.resolve_expr(expr);
-                }
-                if superclass.is_some() {
-                    let scope = self.begin_scope();
-                    scope.insert(
-                        "super".to_string(),
-                        Variable {
-                            token: None,
-                            status: Status::Used,
-                        },
-                    );
-                }
-                let scope = self.begin_scope();
-                scope.insert(
-                    "this".to_string(),
-                    Variable {
-                        token: None,
-                        status: Status::Used,
-                    },
-                );
-                for method in methods {
-                    self.resolve_function(method);
-                }
-                self.end_scope();
-                if superclass.is_some() {
-                    self.end_scope();
-                }
-            }
+            } => self.resolve_class(name, methods, superclass),
         }
     }
 
@@ -165,8 +139,27 @@ impl<'a> Resolver<'a> {
                 self.resolve_expr(object);
                 self.resolve_expr(value)
             }
-            Expr::This(keyword) => self.resolve_local(keyword),
-            Expr::Super { keyword, .. } => self.resolve_local(keyword),
+            Expr::This(keyword) => {
+                if self.current_class == ClassType::None {
+                    self.lox.report(Error::syntax_err(
+                        keyword,
+                        "Can't use 'this' outside of a class.",
+                    ));
+                } else {
+                    self.resolve_local(keyword);
+                }
+            }
+            Expr::Super { keyword, .. } => match self.current_class {
+                ClassType::None => self.lox.report(Error::syntax_err(
+                    keyword,
+                    "Can't use 'super' outside of a class.",
+                )),
+                ClassType::Class => self.lox.report(Error::syntax_err(
+                    keyword,
+                    "Can't use 'super' in a class with no superclass.",
+                )),
+                ClassType::Subclass => self.resolve_local(keyword),
+            },
         }
     }
 
@@ -195,6 +188,47 @@ impl<'a> Resolver<'a> {
             }
         }
         self.resolve_local(token);
+    }
+
+    fn resolve_class(&mut self, name: &Token, methods: &[Function], superclass: &Option<Expr>) {
+        let encolosing_class = self.current_class;
+        self.current_class = ClassType::Class;
+        self.declare(name);
+        self.define(name);
+        if let Some(expr @ Expr::Variable(t)) = superclass {
+            if t.lexeme == name.lexeme {
+                self.lox
+                    .report(Error::syntax_err(t, "A class can't inherit from itself."));
+            }
+            self.resolve_expr(expr);
+        }
+        if superclass.is_some() {
+            self.current_class = ClassType::Subclass;
+            let scope = self.begin_scope();
+            scope.insert(
+                "super".to_string(),
+                Variable {
+                    token: None,
+                    status: Status::Used,
+                },
+            );
+        }
+        let scope = self.begin_scope();
+        scope.insert(
+            "this".to_string(),
+            Variable {
+                token: None,
+                status: Status::Used,
+            },
+        );
+        for method in methods {
+            self.resolve_function(method);
+        }
+        self.end_scope();
+        if superclass.is_some() {
+            self.end_scope();
+        }
+        self.current_class = encolosing_class;
     }
 
     fn resolve_function(&mut self, fun: &Function) {
@@ -270,6 +304,46 @@ mod tests {
         assert_eq!(
             &lox.test_run("class Oops < Oops {}").unwrap_err().message,
             "A class can't inherit from itself."
+        );
+        assert_eq!(lox.test_run("class A {}"), Ok(()));
+        assert_eq!(lox.test_run("class B < A {}"), Ok(()));
+    }
+
+    #[test]
+    fn test_this() {
+        let mut lox = Lox::new(SourceId::Test, "".to_string());
+        assert_eq!(
+            &lox.test_run("this.notInClass();").unwrap_err().message,
+            "Can't use 'this' outside of a class."
+        );
+        assert_eq!(
+            &lox.test_run("fun func() { print this; }")
+                .unwrap_err()
+                .message,
+            "Can't use 'this' outside of a class."
+        );
+    }
+
+    #[test]
+    fn test_super() {
+        let mut lox = Lox::new(SourceId::Test, "".to_string());
+        let source = r#"
+            class Eclair {
+                cook() {
+                    super.cook();
+                    print "Pipe full of crème pâtissière.";
+                }
+            }
+            "#;
+        assert_eq!(
+            &lox.test_run(source).unwrap_err().message,
+            "Can't use 'super' in a class with no superclass."
+        );
+        assert_eq!(
+            &lox.test_run("super.notEvenInAClass();")
+                .unwrap_err()
+                .message,
+            "Can't use 'super' outside of a class."
         );
     }
 
