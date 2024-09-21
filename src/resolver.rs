@@ -11,6 +11,7 @@ pub struct Resolver<'a> {
     scopes: Vec<Scope>,
     current_function: Option<FunctionType>,
     current_class: ClassType,
+    in_loop: bool,
 }
 
 type Scope = HashMap<String, Variable>;
@@ -42,6 +43,7 @@ impl<'a> Resolver<'a> {
             scopes: Default::default(),
             current_function: None,
             current_class: ClassType::None,
+            in_loop: false,
         }
     }
 
@@ -76,7 +78,10 @@ impl<'a> Resolver<'a> {
             }
             Stmt::While { condition, body } => {
                 self.resolve_expr(condition);
+                let prev = self.in_loop;
+                self.in_loop = true;
                 self.resolve_stmt(body);
+                self.in_loop = prev;
             }
             Stmt::Block(statements) => {
                 self.begin_scope();
@@ -103,6 +108,11 @@ impl<'a> Resolver<'a> {
                         ));
                     }
                     self.resolve_expr(expr);
+                }
+            }
+            Stmt::Break(token) => {
+                if !self.in_loop {
+                    self.lox.report(Error::syntax_err(token, "Can't break outside of a loop."));
                 }
             }
             Stmt::Class {
@@ -297,6 +307,15 @@ impl<'a> Resolver<'a> {
 mod tests {
     use super::*;
     use crate::{Lox, SourceId};
+
+    #[test]
+    fn test_break() {
+        let mut lox = Lox::new(SourceId::Test, "".to_string());
+        assert_eq!(
+            &lox.test_run("break;").unwrap_err().message,
+            "Can't break outside of a loop."
+        );
+    }
 
     #[test]
     fn test_inheritance() {

@@ -70,7 +70,7 @@ impl<'a> Parser<'a> {
             }
             if matches!(
                 self.peek().token_type,
-                Class | Fun | Var | For | If | While | Print | Return
+                Class | Fun | Var | For | If | While | Print | Return | Break
             ) {
                 return;
             }

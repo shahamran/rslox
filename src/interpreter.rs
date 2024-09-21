@@ -48,7 +48,18 @@ impl Interpreter {
             }
             Stmt::While { condition, body } => {
                 while is_truthy(&self.evaluate(condition)?) {
-                    self.execute(body)?;
+                    match self.execute(body) {
+                        Ok(_) => {}
+                        Err(Error {
+                            token:
+                                Some(Token {
+                                    token_type: TokenType::Break,
+                                    ..
+                                }),
+                            ..
+                        }) => break,
+                        Err(err) => return Err(err),
+                    }
                 }
             }
             Stmt::Function(fun) => self.eval_function_decl(fun)?,
@@ -64,6 +75,7 @@ impl Interpreter {
                 methods,
                 superclass,
             } => self.eval_class_decl(name, methods, superclass.as_ref())?,
+            Stmt::Break(t) => return Err(Error::runtime_err(t, "")),
         }
         Ok(())
     }
@@ -358,6 +370,21 @@ mod tests {
     use crate::{Lox, SourceId};
 
     use super::*;
+
+    #[test]
+    fn test_break() {
+        let mut lox = Lox::new(SourceId::Test, "".to_string());
+        let source = r#"
+            var i = 0;
+            while (true) {
+                i = i + 1;
+                if (i >= 3)
+                    break;
+            }
+            "#;
+        assert_eq!(lox.test_run(source), Ok(()));
+        assert_eq!(lox.test_eval("i"), Ok(Value::Number(3.0)));
+    }
 
     #[test]
     fn test_inheritance() {

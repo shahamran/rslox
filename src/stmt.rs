@@ -30,6 +30,7 @@ pub enum Stmt {
         keyword: Token,
         value: Option<Expr>,
     },
+    Break(Token),
     Class {
         name: Token,
         methods: Vec<Function>,
@@ -173,6 +174,10 @@ impl Parser<'_> {
             self.print_statement()
         } else if self.matches(&[TokenType::Return]) {
             self.return_statement()
+        } else if self.matches(&[TokenType::Break]) {
+            let stmt = Stmt::Break(self.previous().clone());
+            self.consume(TokenType::Semicolon, "Expected ';' after 'break'.")?;
+            Ok(stmt)
         } else if self.matches(&[TokenType::While]) {
             self.while_statement()
         } else if self.matches(&[TokenType::LeftBrace]) {

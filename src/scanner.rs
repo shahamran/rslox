@@ -48,6 +48,7 @@ pub enum TokenType {
     Number,
 
     And,
+    Break,
     Class,
     Else,
     False,
@@ -241,6 +242,7 @@ impl<'a> Scanner<'a> {
         let lexeme = self.read_lexeme();
         let token_type = match lexeme {
             "and" => And,
+            "break" => Break,
             "class" => Class,
             "else" => Else,
             "false" => False,
