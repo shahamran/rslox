@@ -132,6 +132,10 @@ impl Function {
             .define("this".to_string(), Value::ClassInstance(instance));
         Self { closure, ..self }
     }
+
+    pub fn is_method(&self) -> bool {
+        self.declaration.kind == stmt::FunctionType::Method
+    }
 }
 
 impl ClassInstance {

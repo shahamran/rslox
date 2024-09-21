@@ -179,7 +179,7 @@ impl Interpreter {
     fn eval_get(&mut self, object: &Expr, name: &Token) -> Result<Value> {
         match self.evaluate(object)? {
             Value::ClassInstance(inst) => match inst.borrow().get(name)? {
-                Value::Callable(value::Callable::Function(fun)) => {
+                Value::Callable(value::Callable::Function(fun)) if fun.is_method() => {
                     Ok(fun.bind(Rc::clone(&inst)).into())
                 }
                 lit => Ok(lit),
